@@ -49,7 +49,7 @@ ${hasCover ? '<meta property="og:image:width" content="1200">\n<meta property="o
 <meta name="twitter:title" content="${esc(title)}">
 <meta name="twitter:image" content="${esc(img)}">
 <script type="application/ld+json">${ldJson}</script>
-<style>body{margin:0;background:#faf6ee;color:#2a2118;font-family:"Frank Ruhl Libre","David",serif;line-height:1.7}main{max-width:640px;margin:0 auto;padding:28px 18px 48px;text-align:center}img{max-width:100%;height:auto;border-radius:10px}h1{color:#8a5a1f;font-size:1.6rem;margin:14px 0 4px}.d{color:#7a6c5a;margin:0 0 12px}.b{display:inline-block;margin:18px 0 8px;padding:12px 26px;background:#8a5a1f;color:#fff;border-radius:10px;text-decoration:none;font-weight:700}a.h{color:#8a5a1f;display:block;margin-top:10px}.pn{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin:22px 0 0}.pn a{flex:1 1 200px;max-width:300px;padding:10px 14px;border:1px solid #d9c9a8;border-radius:10px;color:#8a5a1f;text-decoration:none;font-weight:700}.pn small{display:block;font-weight:400;color:#7a6c5a;font-size:.8rem}h2{font-size:1.05rem;color:#7a6c5a;margin:26px 0 0}@media(prefers-color-scheme:dark){body{background:#17130e;color:#f1e8d8}h1,a.h{color:#d9a35a}.b{background:#d9a35a;color:#1a1209}.pn a{border-color:#3a2f20;color:#d9a35a}.pn small,h2{color:#a8987f}}</style>
+<style>body{margin:0;background:#faf6ee;color:#2a2118;font-family:"Frank Ruhl Libre","David",serif;line-height:1.7}main{max-width:640px;margin:0 auto;padding:28px 18px 48px;text-align:center}img{max-width:100%;height:auto;border-radius:10px}h1{color:#8a5a1f;font-size:1.6rem;margin:14px 0 4px}.d{color:#7a6c5a;margin:0 0 12px}.b{display:inline-block;margin:18px 0 8px;padding:12px 26px;background:#8a5a1f;color:#fff;border-radius:10px;text-decoration:none;font-weight:700}a.h{color:#8a5a1f;display:block;margin-top:10px}.pn{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin:22px 0 0}.pn a{flex:1 1 200px;max-width:300px;padding:10px 14px;border:1px solid #d9c9a8;border-radius:10px;color:#8a5a1f;text-decoration:none;font-weight:700}.pn small{display:block;font-weight:400;color:#7a6c5a;font-size:.8rem}h2{font-size:1.05rem;color:#7a6c5a;margin:26px 0 0}@media(prefers-color-scheme:dark){body{background:#17130e;color:#f1e8d8}h1,a.h{color:#d9a35a}.b{background:#d9a35a;color:#1a1209}.pn a{border-color:#3a2f20;color:#d9a35a}.pn small,h2{color:#a8987f}}@media print{.b,.pn,.h,h2{display:none}body{background:#fff;color:#000}}</style>
 </head><body><main>
 ${hasCover ? `<img src="${esc(img)}" alt="${esc(title)}" width="1200" height="630">` : ""}
 <h1>${esc(title)}</h1>
@@ -79,17 +79,35 @@ export function sitemapXml(site, issues, today = new Date().toISOString().slice(
 export function archiveHtml(issues, site) {
   const rows = [...issues].sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
   const li = x => `<li><a href="/i/${esc(x.id)}">${esc(issueTitle(x))}</a>${isoDay(x.date) ? ` <span>${isoDay(x.date)}</span>` : ""}</li>`;
+  // קיבוץ לפי שנה (מהחדשה לישנה); גיליונות בלי תאריך בסוף
+  const by = new Map();
+  for (const x of rows) { const y = (isoDay(x.date) || "").slice(0, 4) || "ללא תאריך"; if (!by.has(y)) by.set(y, []); by.get(y).push(x); }
+  const years = [...by.keys()];
+  const nav = years.length > 1 ? `<nav class="yrs" aria-label="שנים">${years.map(y => `<a href="#y${esc(y.replace(/\s/g, "-"))}">${esc(y)}</a>`).join(" ")}</nav>` : "";
+  const body = years.map(y => `<h2 id="y${esc(y.replace(/\s/g, "-"))}">${esc(y)} <small>(${by.get(y).length})</small></h2>\n<ul>${by.get(y).map(li).join("\n")}</ul>`).join("\n");
+  const url = site + "/archive", title = "ארכיון הגיליונות · חכמי ספרד";
   const desc = "ארכיון כל הגיליונות השבועיים של מכון חכמי ספרד – גיליון לזכות הרבים, לפי שבתות ושנים";
+  const ld = JSON.stringify({ "@context": "https://schema.org", "@type": "CollectionPage", name: title, url, inLanguage: "he", description: desc, numberOfItems: rows.length, isPartOf: { "@type": "WebSite", name: "גיליון חכמי ספרד", url: site + "/" } }).replace(/</g, "\\u003c");
   return `<!doctype html>
 <html lang="he" dir="rtl"><head><meta charset="utf-8">
-<title>ארכיון הגיליונות · חכמי ספרד</title>
+<title>${esc(title)}</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="description" content="${esc(desc)}">
-<link rel="canonical" href="${esc(site + "/archive")}">
-<style>body{margin:0;font-family:"Frank Ruhl Libre","David",serif;background:#faf6ee;color:#2a2118;line-height:1.7}main{max-width:720px;margin:0 auto;padding:24px 16px}h1{color:#8a5a1f}li{margin:.3em 0}li span{color:#7a6c5a;font-size:.85em}a{color:#8a5a1f}@media(prefers-color-scheme:dark){body{background:#17130e;color:#f1e8d8}a{color:#d9a35a}}</style></head>
+<link rel="canonical" href="${esc(url)}">
+<link rel="alternate" type="application/rss+xml" title="גיליון חכמי ספרד" href="/rss.xml">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="מכון חכמי ספרד">
+<meta property="og:locale" content="he_IL">
+<meta property="og:title" content="${esc(title)}">
+<meta property="og:description" content="${esc(desc)}">
+<meta property="og:url" content="${esc(url)}">
+<meta property="og:image" content="${esc(site + "/logo.jpg")}">
+<script type="application/ld+json">${ld}</script>
+<style>body{margin:0;font-family:"Frank Ruhl Libre","David",serif;background:#faf6ee;color:#2a2118;line-height:1.7}main{max-width:720px;margin:0 auto;padding:24px 16px}h1{color:#8a5a1f}h2{color:#8a5a1f;margin:1.4em 0 .2em;border-bottom:1px solid #d9c9a8}h2 small{font-weight:400;color:#7a6c5a;font-size:.7em}ul{margin:.3em 0;padding-inline-start:1.2em}li{margin:.3em 0}li span{color:#7a6c5a;font-size:.85em}a{color:#8a5a1f}.yrs{display:flex;flex-wrap:wrap;gap:6px 14px;margin:12px 0}@media(prefers-color-scheme:dark){body{background:#17130e;color:#f1e8d8}a,h1,h2{color:#d9a35a}h2{border-color:#3a2f20}li span,h2 small{color:#a8987f}}@media print{.yrs,.nv{display:none}body{background:#fff;color:#000}a{color:#000;text-decoration:none}}</style></head>
 <body><main><h1>ארכיון הגיליונות</h1><p>${esc(desc)}.</p>
-<ul>${rows.map(li).join("\n")}</ul>
-<p><a href="/">← לאתר הראשי</a> · <a href="/rss.xml">RSS</a></p></main></body></html>
+${nav}
+${body}
+<p class="nv"><a href="/">← לאתר הראשי</a> · <a href="/rss.xml">RSS</a></p></main></body></html>
 `;
 }
 

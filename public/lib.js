@@ -352,3 +352,23 @@ export function layoutList(defs, saved) {
   });
   return out.concat(rest);
 }
+
+// ===== הגדרות אתר (meta/site): פרטי קשר והודעה בראש האתר – נערכות בדף הניהול, בלי פריסה =====
+// קישור מותר: https://… / http://… או נתיב פנימי שמתחיל ב-/ (לא //). כל השאר נפסל
+export const safeUrl = u => { u = String(u == null ? "" : u).trim(); return /^https?:\/\/[^\s]+$/i.test(u) || u === "/" || /^\/[^\s\/][^\s]*$/.test(u) ? u : ""; };
+export function cleanSiteCfg(r) {
+  r = r || {}; const c = r.contact || {}, b = r.banner || {}, tx = b.text || {};
+  const s = (v, n) => String(v == null ? "" : v).trim().slice(0, n);
+  const email = s(c.email, 120);
+  return {
+    contact: { email: /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : "", phone: s(c.phone, 40), whatsapp: s(c.whatsapp, 20).replace(/\D/g, ""), address: s(c.address, 200) },
+    banner: { on: !!b.on, text: { he: s(tx.he, 300), en: s(tx.en, 300), fr: s(tx.fr, 300), es: s(tx.es, 300) }, url: safeUrl(b.url), until: /^\d{4}-\d{2}-\d{2}$/.test(String(b.until || "")) ? b.until : "" }
+  };
+}
+// ההודעה להצגה בשפה lang (נפילה לעברית), או null: כבויה / פג תוקף / בלי טקסט
+export function bannerFor(cfg, lang, today) {
+  const b = cfg && cfg.banner; if (!b || !b.on) return null;
+  if (b.until && today > b.until) return null;
+  const text = (b.text && (b.text[lang] || b.text.he)) || "";
+  return text ? { text, url: safeUrl(b.url) } : null;
+}

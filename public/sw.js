@@ -1,4 +1,4 @@
-const C='sefarad-v1.36.4';
+const C='sefarad-v1.36.6';
 // התראות Push (FCM): אם הטעינה נכשלת (למשל בלי רשת) – ה-SW ממשיך לעבוד כרגיל
 try{importScripts('https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js','https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging-compat.js','/__/firebase/init.js');firebase.messaging()}catch(e){}
 self.addEventListener('install',e=>{e.waitUntil(caches.open(C).then(c=>c.addAll(['/','/manifest.webmanifest','/logo.jpg','/logo-band.png','/theme.css'])));self.skipWaiting()});

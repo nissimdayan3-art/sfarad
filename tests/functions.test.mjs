@@ -108,3 +108,14 @@ test("archiveHtml: קישורים רגילים, מהחדש לישן, עם ברי
   assert.ok(h.indexOf('/i/n&amp;1') < h.indexOf('/i/o"'));
   assert.match(h, /<a href="\/i\/o">פרשת נח<\/a>/);
 });
+test("archiveHtml: קיבוץ לפי שנה, ניווט שנים, JSON-LD ובריחה", () => {
+  const h = archiveHtml([{ id: "a", parasha: "נח", date: "2025-10-25" }, { id: "b", parasha: "לך לך", date: "2026-10-24" }, { id: "c", parasha: "וירא", date: "2026-10-31" }, { id: "d", parasha: "חיי שרה" }], "https://s");
+  assert.ok(h.indexOf('id="y2026"') < h.indexOf('id="y2025"'), "שנה חדשה קודם");
+  assert.match(h, /<h2 id="y2026">2026 <small>\(2\)<\/small><\/h2>/);
+  assert.match(h, /<a href="#y2025">2025<\/a>/);
+  assert.ok(h.indexOf('/i/c') < h.indexOf('/i/b'), "בתוך שנה: חדש קודם");
+  assert.match(h, /id="yללא-תאריך"/);
+  const ld = JSON.parse(h.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/)[1]);
+  assert.equal(ld["@type"], "CollectionPage"); assert.equal(ld.numberOfItems, 4);
+  assert.match(h, /@media print/);
+});

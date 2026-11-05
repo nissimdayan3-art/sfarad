@@ -2,7 +2,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
 import { getFirestore, collection, query, orderBy, onSnapshot, doc, getDoc, getDocs, setDoc, updateDoc, increment, writeBatch, deleteDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
 import { getAuth, onAuthStateChanged, signInWithPopup, signInWithRedirect, getRedirectResult, GoogleAuthProvider, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { layoutList, parseDedRows, parseSubRows, subDoc, SUB_LIM, cleanField, onlyCountersChanged, linkParts, D, heLetters, MONTHS, hebOf, weekKeys, dayKeys, gday, gem, findSagesInText, sageQuery, sageSearch, sortKey, isoOf, todayStr, halIdx, halKeysFor, halRowKeys, addDays, carryPhotos, cleanBooks, parseZmanimRows, zmCityName, zmCityId } from "./lib.js";
+import { cleanSiteCfg, bannerFor, layoutList, parseDedRows, parseSubRows, subDoc, SUB_LIM, cleanField, onlyCountersChanged, linkParts, D, heLetters, MONTHS, hebOf, weekKeys, dayKeys, gday, gem, findSagesInText, sageQuery, sageSearch, sortKey, isoOf, todayStr, halIdx, halKeysFor, halRowKeys, addDays, carryPhotos, cleanBooks, parseZmanimRows, zmCityName, zmCityId } from "./lib.js";
 
 // ⬇️ הדבק כאן את ה-config של הפרויקט שלך
 const FALLBACK_CONFIG = {
@@ -24,7 +24,7 @@ if (AUTH_ON_CUSTOM_DOMAIN && location.hostname === "www.toratsfarad.co.il") fire
 
 
 // ⬇️ פרטי יצירת קשר – השאר ריק ("") כדי להסתיר שדה
-const VERSION = "1.36.4";
+const VERSION = "1.36.6";
 const MAX_UPLOAD = 2 * 1024 * 1024; // 2MB
 const VAPID_KEY = "BA9OIury_RZV-RbHVTaVKhCAgYD207H6XqBBAnXXZy0-y6OZDyeVRGKQNfoJ-YBgqeyqWRYJ6yMFcZ3e8p4wC0Y";              // ⬅️ מפתח Web Push: Firebase Console ← Project settings ← Cloud Messaging ← Web Push certificates. ריק = כפתור ההתראות מוסתר
 const FUNCTIONS_REGION = "europe-west1"; // חייב להיות זהה ל-REGION ב-functions/index.js
@@ -391,6 +391,42 @@ async function aboutEditor(c) {
   };
 }
 
+// 1.36.6: לשונית «הגדרות אתר» – פרטי קשר (כותרת תחתית) והודעה בראש האתר. נשמר ב-meta/site ומופיע מיד לכל המבקרים, בלי פריסה
+async function siteAdmin(c) {
+  c.appendChild(el("h3", null, "הגדרות האתר"));
+  c.appendChild(el("div", "hint", "השינויים מופיעים באתר מיד, בלי העלאה. את שאר האתר (טקסטים ועיצוב) עורכים ב«עורך חזותי» ו«פריסה». שינויי קוד עדיין דורשים פריסה."));
+  let cur = {}; try { const d = await getDoc(doc(db, "meta", "site")); if (d.exists()) cur = cleanSiteCfg(d.data()); } catch (e) { c.appendChild(el("div", "msg", "שגיאה בטעינה: " + e.message)); return; }
+  const C = cur.contact || {}, B = cur.banner || { text: {} };
+  const F = {}, field = (box, key, label, val, mk) => { box.appendChild(el("label", null, label)); const x = mk ? mk() : el("input"); if (!mk) x.type = "text"; x.value = val || ""; F[key] = x; box.appendChild(x); return x; };
+  const cc = el("div", "card"); cc.style.marginTop = "12px"; c.appendChild(cc);
+  cc.appendChild(el("h4", null, "פרטי קשר (מוצגים בתחתית האתר)"));
+  field(cc, "email", "מייל", C.email ?? CONTACT.email); F.email.dir = "ltr";
+  field(cc, "phone", "טלפון", C.phone ?? CONTACT.phone); F.phone.dir = "ltr";
+  field(cc, "whatsapp", "וואטסאפ (מספר בינלאומי, בלי + ומקפים, למשל 972501234567)", C.whatsapp ?? CONTACT.whatsapp); F.whatsapp.dir = "ltr";
+  field(cc, "address", "כתובת", C.address ?? CONTACT.address);
+  cc.appendChild(el("div", "hint", "שדה ריק = לא מוצג. כתובת האתר (" + CONTACT.site + ") קבועה ולא נערכת מכאן."));
+  const bb = el("div", "card"); bb.style.marginTop = "12px"; c.appendChild(bb);
+  bb.appendChild(el("h4", null, "הודעה בראש האתר"));
+  const lab = el("label"); const on = el("input"); on.type = "checkbox"; on.checked = !!B.on; lab.append(on, " הצג הודעה"); bb.appendChild(lab);
+  const area = () => { const x = el("textarea"); x.style.minHeight = "60px"; return x; };
+  [["he", "עברית (חובה כדי שההודעה תוצג)"], ["en", "English (אופציונלי)"], ["fr", "Français (אופציונלי)"], ["es", "Español (אופציונלי)"]].forEach(([k, l]) => field(bb, "t_" + k, l, (B.text || {})[k], area));
+  field(bb, "url", "קישור (אופציונלי: https://… או /archive)", B.url); F.url.dir = "ltr";
+  field(bb, "until", "מוצגת עד (אופציונלי, כולל התאריך הזה)", B.until); F.until.type = "date";
+  bb.appendChild(el("div", "hint", "שפה בלי תרגום מציגה את הטקסט בעברית. מי שסגר את ההודעה לא יראה אותה שוב עד סגירת הדפדפן."));
+  const b = el("button", "btn", "שמירה"), m = el("div", "msg"); c.append(b, m);
+  b.onclick = async () => {
+    b.disabled = true; m.textContent = "שומר…";
+    try {
+      const d = cleanSiteCfg({ contact: { email: F.email.value, phone: F.phone.value, whatsapp: F.whatsapp.value, address: F.address.value }, banner: { on: on.checked, text: { he: F.t_he.value, en: F.t_en.value, fr: F.t_fr.value, es: F.t_es.value }, url: F.url.value, until: F.until.value } });
+      const bad = []; if (F.email.value.trim() && !d.contact.email) bad.push("מייל לא תקין"); if (F.url.value.trim() && !d.banner.url) bad.push("קישור לא תקין (חייב להתחיל ב-https:// או /)");
+      if (bad.length) { m.textContent = "⚠ " + bad.join(" · "); b.disabled = false; return; }
+      await setDoc(doc(db, "meta", "site"), { version: Date.now(), ...d });
+      SITE_CFG = d; applySiteContact(); m.textContent = "✓ נשמר" + (d.banner.on && !d.banner.text.he ? " (ההודעה לא תוצג: חסר טקסט בעברית)" : "");
+    } catch (e) { m.textContent = "שגיאה: " + e.message; }
+    b.disabled = false;
+  };
+}
+
 async function subsView(c0) {
   const c = el("div"); c0.appendChild(c);            // מכל, כדי שהכפתורים שמתחת (יציאה) לא יקפצו לאמצע בזמן הטעינה
   c.appendChild(el("h3", null, "נרשמים לקבלת הגיליון במייל"));
@@ -650,7 +686,7 @@ function showSub(btn, v) {
 function render() {
   $("status").textContent = "";
   if (focusId && issues.length) { const f0 = issues.find(x => x.id === focusId); if (f0) { view = "issues"; mode = "year"; selYear = yearOf(f0); filter = ""; $("q").value = ""; pendingScroll = focusId; } focusId = null; }
-  if (!TXT && !txtLoading) loadTexts();
+  if (!TXT && !txtLoading) loadTexts(); if (!SITE_CFG && !siteLoading) loadSite();
   applyBottom(); hideSub(); const N = $("nav"); N.innerHTML = "";
   (() => { if (!LAYOUT && !layoutLoading) loadLayout(); const l = layoutList(NAV_IDS.map(x => [x[0], x[1]]), LY().nav).filter(x => editMode || !x.hide); const ok = l.length ? l : layoutList(NAV_IDS, null); if (!ok.some(x => x.id === view)) view = ok[0].id; return ok.map(x => [x.id, x.label, x.hide]); })().forEach(([v, k, hd]) => {
     const b = el("button", "chip" + (view === v ? " on" : ""), t(k)); b.onclick = () => { view = v; render(); }; if (editMode) { b.classList.add("edit-blk"); b.dataset.edG = "nav"; b.dataset.edId = v; if (hd) b.classList.add("ed-off"); b.appendChild(edBar("nav", v, hd, true)); } N.appendChild(b);
@@ -1537,6 +1573,25 @@ document.addEventListener("click", e => {
   if (!TXT_ON) return; const sp = e.target.closest && e.target.closest(".ed-txt");
   if (sp) { e.preventDefault(); e.stopPropagation(); edTextPop(sp); } else if (!e.target.closest(".ed-pop")) document.querySelectorAll(".ed-pop").forEach(n => n.remove());
 }, true);
+// 1.36.6: הגדרות אתר (meta/site) – פרטי קשר והודעה בראש האתר, נערכים בלשונית «הגדרות אתר» בדף הניהול
+let SITE_CFG = null, siteLoading = false;
+function applySiteContact() { const c = SITE_CFG && SITE_CFG.contact; if (c) ["email", "phone", "whatsapp", "address"].forEach(k => { if (typeof c[k] === "string") CONTACT[k] = c[k]; }); }
+async function loadSite() {
+  if (siteLoading) return; siteLoading = true;
+  try { const d = await getDoc(doc(db, "meta", "site")); SITE_CFG = d.exists() ? cleanSiteCfg(d.data()) : {}; if (d.exists() && !d.data().contact) delete SITE_CFG.contact; } catch { SITE_CFG = {}; }
+  siteLoading = false; applySiteContact(); applyLang();
+}
+function renderBanner() {
+  let n = $("banner");
+  const b = ADMIN_PAGE ? null : bannerFor(SITE_CFG, lang, todayStr());
+  let dismissed = false; try { dismissed = !!b && sessionStorage.getItem("bannerX") === b.text; } catch {}
+  if (!b || dismissed) { if (n) n.remove(); return; }
+  if (!n) { n = el("div", "site-banner"); n.id = "banner"; n.setAttribute("role", "status"); const tb = document.querySelector(".topband"); if (!tb) return; tb.after(n); }
+  n.innerHTML = "";
+  const msg = b.url ? el("a", null, b.text) : el("span", null, b.text); if (b.url) { msg.href = b.url; if (/^https?:/i.test(b.url)) { msg.target = "_blank"; msg.rel = "noopener"; } }
+  const x = el("button", null, "✕"); x.setAttribute("aria-label", "✕"); x.onclick = () => { try { sessionStorage.setItem("bannerX", b.text); } catch {} n.remove(); };
+  n.append(msg, x);
+}
 async function loadTexts() {
   if (txtLoading) return; txtLoading = true;
   try { const d = await getDoc(doc(db, "meta", "texts")); TXT = d.exists() ? JSON.parse(d.data().json || "{}") : {}; } catch { TXT = {}; }
@@ -2018,9 +2073,9 @@ function adminPanel() {
     const o = el("button", "btn sm ghost", "יציאה"); o.onclick = () => signOut(auth); c.appendChild(o);
   } else {
     const tb = el("div", "chips");
-    [["list", "גיליונות"], ["issue", editing ? "עריכת גיליון" : "העלאת גיליון"], ["visual", "✏️ עורך חזותי"], ["stats", "\u{1F4CA} \u05e1\u05d8\u05d8\u05d9\u05e1\u05d8\u05d9\u05e7\u05d5\u05ea"], ["track", "מעקב גאונים"], ["sagemgr", "גאונים"], ["subs", "נרשמים"], ["halacha", "הלכה יומית"], ["zmanim", "זמני היום"], ["ded", "הקדשות"], ["layout", "פריסה (רשימה)"], ["books", "קטלוג ספרים"], ["about", "אודות"], ["import", "ייבוא מאקסל"], ["backup", "גיבויים"], ["admins", "מנהלים"]].forEach(([k, l]) => { const b = el("button", "chip" + (adminTab === k ? " on" : ""), l); b.onclick = () => { if (editMode && k !== "visual" && edDirty && !confirm("יש שינויים שלא נשמרו בעורך החזותי. לעזוב ולבטל אותם?")) return; adminTab = k; editing = k === "issue" ? editing : null; editSage = null; sageNew = false; if (k === "visual") enterEdit(); adminPanel(); }; tb.appendChild(b); });
+    [["list", "גיליונות"], ["issue", editing ? "עריכת גיליון" : "העלאת גיליון"], ["visual", "✏️ עורך חזותי"], ["stats", "\u{1F4CA} \u05e1\u05d8\u05d8\u05d9\u05e1\u05d8\u05d9\u05e7\u05d5\u05ea"], ["track", "מעקב גאונים"], ["sagemgr", "גאונים"], ["subs", "נרשמים"], ["halacha", "הלכה יומית"], ["zmanim", "זמני היום"], ["ded", "הקדשות"], ["layout", "פריסה (רשימה)"], ["books", "קטלוג ספרים"], ["about", "אודות"], ["import", "ייבוא מאקסל"], ["site", "⚙️ הגדרות אתר"], ["backup", "גיבויים"], ["admins", "מנהלים"]].forEach(([k, l]) => { const b = el("button", "chip" + (adminTab === k ? " on" : ""), l); b.onclick = () => { if (editMode && k !== "visual" && edDirty && !confirm("יש שינויים שלא נשמרו בעורך החזותי. לעזוב ולבטל אותם?")) return; adminTab = k; editing = k === "issue" ? editing : null; editSage = null; sageNew = false; if (k === "visual") enterEdit(); adminPanel(); }; tb.appendChild(b); });
     c.appendChild(tb);
-    if (adminTab === "visual") visualBar(c); else if (adminTab === "list") issuesList(c); else if (adminTab === "issue") issueForm(c); else if (adminTab === "stats") statsView(c); else if (adminTab === "track") trackView(c); else if (adminTab === "subs") subsView(c); else if (adminTab === "sagemgr") sagesManager(c); else if (adminTab === "halacha") halachaAdmin(c); else if (adminTab === "zmanim") zmanimAdmin(c); else if (adminTab === "ded") dedAdmin(c); else if (adminTab === "layout") layoutAdmin(c); else if (adminTab === "books") booksView(c); else if (adminTab === "about") aboutEditor(c); else if (adminTab === "import") importView(c); else if (adminTab === "backup") backupView(c); else adminsBox(c);
+    if (adminTab === "visual") visualBar(c); else if (adminTab === "list") issuesList(c); else if (adminTab === "issue") issueForm(c); else if (adminTab === "stats") statsView(c); else if (adminTab === "track") trackView(c); else if (adminTab === "subs") subsView(c); else if (adminTab === "sagemgr") sagesManager(c); else if (adminTab === "halacha") halachaAdmin(c); else if (adminTab === "zmanim") zmanimAdmin(c); else if (adminTab === "ded") dedAdmin(c); else if (adminTab === "layout") layoutAdmin(c); else if (adminTab === "books") booksView(c); else if (adminTab === "about") aboutEditor(c); else if (adminTab === "import") importView(c); else if (adminTab === "site") siteAdmin(c); else if (adminTab === "backup") backupView(c); else adminsBox(c);
     const o = el("button", "btn sm ghost", "יציאה"); o.style.marginTop = "16px"; o.onclick = () => signOut(auth); c.appendChild(o);
   }
   box.appendChild(c);
@@ -2048,6 +2103,7 @@ function applyLang() {
   LANGS.forEach(l => { const o = el("option", null, T[l].name); o.value = l; if (l === lang) o.selected = true; ls.appendChild(o); });
   ls.onchange = () => { lang = ls.value; try { localStorage.setItem("lang", lang); } catch {} applyLang(); };
   Lb.appendChild(ls);
+  renderBanner();
   const C = $("contact"); C.innerHTML = "";
   const items = [];
   if (CONTACT.email) { const a = el("a", null, "✉ " + CONTACT.email); a.href = "mailto:" + CONTACT.email; items.push(a); }
