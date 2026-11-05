@@ -1,0 +1,57 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isAdmin() {
+      return request.auth != null
+        && request.auth.token.email_verified == true
+        && exists(/databases/$(database)/documents/admins/$(request.auth.token.email.lower()));
+    }
+    // כולם קוראים, רק מנהלים כותבים
+    match /issues/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+      // מוני צפיות והורדות: כל אחד רשאי להעלות רק את אחד השדות (downloads או views), ב-1 בדיוק
+      allow update: if (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['downloads'])
+          && request.resource.data.downloads is int
+          && request.resource.data.downloads == resource.data.get('downloads', 0) + 1)
+        || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['views'])
+          && request.resource.data.views is int
+          && request.resource.data.views == resource.data.get('views', 0) + 1);
+    }
+    // רשימת הגאונים (נטענת מהאקסל דרך האתר)
+    match /sagesData/{id} { allow read: if true; allow write: if isAdmin(); }
+    // משימות שליחת מייל ברקע: מנהלים רק קוראים (הכתיבה נעשית מהשרת)
+    match /mailJobs/{id} { allow read: if isAdmin(); allow write: if false; }
+    // קטלוג ספרים: מנהלים בלבד – אף קורא (גם לא מחוברים) לא יכול לקרוא או לכתוב
+    match /booksData/{id} { allow read, write: if isAdmin(); }
+    match /booksMeta/{id} { allow read, write: if isAdmin(); }
+    match /halachaData/{id} { allow read: if true; allow write: if isAdmin(); }
+    match /zmanimData/{id} { allow read: if true; allow write: if isAdmin(); } // זמני היום לפי עיר (1.31.0); המטא ב-meta/zmanim
+    match /meta/{id} { allow read: if true; allow write: if isAdmin(); }
+    // נרשמים לקבלת הגיליון במייל: ההרשמה מתבצעת רק דרך הפונקציה subscribeRequest + קישור אישור במייל (double opt-in),
+    // ולכן הלקוחות לא כותבים כאן ישירות. רק מנהלים קוראים וכותבים.
+    match /subscribers/{email} {
+      allow read, write: if isAdmin();
+    }
+    // בקשות הרשמה שממתינות לאישור במייל: נכתבות רק על ידי הפונקציה; מנהלים יכולים לראות ולמחוק
+    match /pendingSubs/{email} {
+      allow read, delete: if isAdmin();
+    }
+
+    // מכשירים שנרשמו להתראות Push: כל אחד יכול להירשם/להסיר את עצמו, רק מנהלים קוראים (השליחה נעשית בפונקציה)
+    match /pushTokens/{token} {
+      allow create, update: if request.resource.data.keys().hasOnly(['token', 'lang', 'ts'])
+        && request.resource.data.token == token
+        && token.size() > 20 && token.size() < 400
+        && request.resource.data.lang is string && request.resource.data.lang.size() < 8
+        && request.resource.data.ts is int;
+      allow delete: if true;
+      allow read: if isAdmin();
+    }
+    // רשימת המנהלים: מנהל רואה ומנהל את כולם; כל משתמש יכול לבדוק רק את עצמו
+    match /admins/{email} {
+      allow get: if request.auth != null && request.auth.token.email.lower() == email;
+      allow list, write: if isAdmin();
+    }
+  }
+}

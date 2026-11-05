@@ -1,0 +1,9 @@
+node_modules/
+functions/node_modules/
+firebase-debug.log
+firebase-debug.*.log
+.firebase/
+# מפתחות פריסה – לעולם לא למאגר
+*service-account*.json
+*-firebase-adminsdk-*.json
+firebase-tools-instant-win* 

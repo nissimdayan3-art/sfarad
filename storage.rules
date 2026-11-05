@@ -1,0 +1,26 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function isAdmin() {
+      return request.auth != null
+        && request.auth.token.email_verified == true
+        && firestore.exists(/databases/(default)/documents/admins/$(request.auth.token.email.lower()));
+    }
+    // תמונות חכמים (1.28.0): קריאה לכולם, כתיבה ומחיקה למנהלים בלבד; עד 1MB (הדפדפן מקטין ל-480px)
+    match /sages/{file} {
+      allow read: if true;
+      allow write: if isAdmin()
+        && request.resource.size <= 1 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+      allow delete: if isAdmin();
+    }
+    match /issues/{file} {
+      allow read: if true;
+      allow write: if isAdmin()
+        && request.resource.size <= 2 * 1024 * 1024
+        && (request.resource.contentType == 'application/pdf'
+            || request.resource.contentType.matches('image/.*'));
+      allow delete: if isAdmin();
+    }
+  }
+}

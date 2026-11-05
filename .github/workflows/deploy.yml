@@ -1,0 +1,62 @@
+# פריסה אוטומטית ל-Firebase בכל עדכון של הענף main (או ידנית: Actions → Deploy to Firebase → Run workflow).
+# לפני הפריסה רצות הבדיקות (npm test); אם הן נכשלות – לא נפרס כלום.
+# דורש סוד אחד במאגר: FIREBASE_SERVICE_ACCOUNT (תוכן קובץ ה-JSON של חשבון השירות). הוראות: GITHUB-DEPLOY.md
+name: Deploy to Firebase
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "מה לפרוס"
+        type: choice
+        default: all
+        options: [all, hosting]
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      PROJECT: sepharad-fe9e8
+      FUNCTIONS_DISCOVERY_TIMEOUT: "120"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Tests
+        run: npm test
+
+      - name: Install functions dependencies
+        run: cd functions && npm install --no-audit --no-fund
+
+      - name: Install Firebase CLI
+        run: npm install -g firebase-tools
+
+      - name: Write service account key
+        env:
+          SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          if [ -z "$SA" ]; then echo "::error::חסר הסוד FIREBASE_SERVICE_ACCOUNT (ראה GITHUB-DEPLOY.md)"; exit 1; fi
+          printf '%s' "$SA" > "$RUNNER_TEMP/sa.json"
+          echo "GOOGLE_APPLICATION_CREDENTIALS=$RUNNER_TEMP/sa.json" >> "$GITHUB_ENV"
+
+      - name: Deploy
+        run: |
+          if [ "${{ github.event.inputs.target }}" = "hosting" ]; then
+            firebase deploy --only hosting --project "$PROJECT" --non-interactive
+          else
+            firebase deploy --project "$PROJECT" --non-interactive
+          fi
+
+      - name: Remove key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/sa.json"
