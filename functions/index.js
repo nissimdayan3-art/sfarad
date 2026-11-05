@@ -1,4 +1,5 @@
 // Firebase Functions (v2). פריסה: cd functions && npm install && cd .. && firebase deploy
+//  • archive      – דף /archive: רשימת כל הגיליונות עם קישורים רגילים (לסריקה)
 //  • share        – דף שיתוף /i/<id> עם תצוגה מקדימה (Open Graph) לכל גיליון
 //  • notifyIssue  – שליחת התראת Push למנויים (למנהלים בלבד)
 //  • mailIssue    – שליחת גיליון במייל למנויים (SMTP של הדומיין), למנהלים בלבד
@@ -14,7 +15,7 @@ import { getStorage } from "firebase-admin/storage";
 import { defineSecret } from "firebase-functions/params";
 import nodemailer from "nodemailer";
 import { randomBytes, createHash } from "node:crypto";
-import { pathPart, shareHtml, sitemapXml, rssXml, backupFolder, oldBackupFolders, backupReplacer, backupReviver, validBackupDate, validBackupCollection, pushMessage, imageOf, issueTitle, emailHtml, emailSubject, unsubToken, verifyUnsub, unsubPage, confirmToken, verifyConfirm, confirmSubject, confirmHtml, confirmPage, emailText, confirmText, MAIL_MAX_PAGES, cleanDetail, SUB_LIMITS, mailBackoffMs } from "./helpers.js";
+import { pathPart, shareHtml, archiveHtml, sitemapXml, rssXml, backupFolder, oldBackupFolders, backupReplacer, backupReviver, validBackupDate, validBackupCollection, pushMessage, imageOf, issueTitle, emailHtml, emailSubject, unsubToken, verifyUnsub, unsubPage, confirmToken, verifyConfirm, confirmSubject, confirmHtml, confirmPage, emailText, confirmText, MAIL_MAX_PAGES, cleanDetail, SUB_LIMITS, mailBackoffMs } from "./helpers.js";
 
 initializeApp();
 const db = getFirestore();
@@ -51,10 +52,20 @@ export const share = onRequest({ region: REGION, memory: "256MiB", maxInstances:
   res.set("Content-Type", "text/html; charset=utf-8").set("Cache-Control", "public, max-age=300, s-maxage=600").status(200).send(shareHtml(issue, id, SITE, rel));
 });
 
+// תאריך יצירה אמיתי של מסמך (createTime של Firestore; לא משתנה בעדכון מוני צפיות), כ-ISO
+const createdOf = d => { try { return d.createTime.toDate().toISOString().slice(0, 10); } catch (e) { return ""; } };
+const allIssues = async () => { const q = await db.collection("issues").select("date", "parasha", "num").get(); return q.docs.map(d => ({ id: d.id, date: d.get("date"), parasha: d.get("parasha"), num: d.get("num"), created: createdOf(d) })); };
+
 export const sitemap = onRequest({ region: REGION, memory: "256MiB", maxInstances: 2 }, async (req, res) => {
   let issues = [];
-  try { const q = await db.collection("issues").select("date").get(); issues = q.docs.map(d => ({ id: d.id, date: d.get("date") })); } catch (e) { console.error("sitemap", e); }
+  try { issues = await allIssues(); } catch (e) { console.error("sitemap", e); }
   res.set("Content-Type", "application/xml; charset=utf-8").set("Cache-Control", "public, max-age=3600, s-maxage=3600").status(200).send(sitemapXml(SITE, issues));
+});
+
+export const archive = onRequest({ region: REGION, memory: "256MiB", maxInstances: 2 }, async (req, res) => {
+  let issues = [];
+  try { issues = await allIssues(); } catch (e) { console.error("archive", e); }
+  res.set("Content-Type", "text/html; charset=utf-8").set("Cache-Control", "public, max-age=900, s-maxage=900").status(200).send(archiveHtml(issues, SITE));
 });
 
 export const rss = onRequest({ region: REGION, memory: "256MiB", maxInstances: 2 }, async (req, res) => {

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { esc, gem, parashaTitle, issueTitle, issueDesc, imageOf, shareHtml, sitemapXml, rssXml, backupFolder, oldBackupFolders, backupReplacer, backupReviver, validBackupDate, validBackupCollection, pushMessage } from "../functions/helpers.js";
+import { esc, gem, parashaTitle, issueTitle, issueDesc, imageOf, shareHtml, sitemapXml, archiveHtml, rssXml, backupFolder, oldBackupFolders, backupReplacer, backupReviver, validBackupDate, validBackupCollection, pushMessage } from "../functions/helpers.js";
 
 const SITE = "https://example.web.app";
 const issue = { parasha: "נח", num: 487, desc: "**שאלה** והתשובה #1\nשורה שנייה", pages: [{ url: "https://x/p1.jpg" }], cover: { url: "https://x/cover.jpg" } };
@@ -93,4 +93,18 @@ test("גיבוי: Timestamp נשמר ומשוחזר בדיוק, ובדיקות �
   assert.equal(back[0].data.n, 3);
   assert.ok(validBackupDate("2026-11-08") && !validBackupDate("2026-11-8") && !validBackupDate("../x"));
   assert.ok(validBackupCollection("issues") && !validBackupCollection("a/b") && !validBackupCollection("") && !validBackupCollection("a..b"));
+});
+
+test("sitemapXml: lastmod מתאריך יצירה, לא בעתיד, כולל /archive", () => {
+  const x = sitemapXml("https://s", [{ id: "a", date: "2026-11-07", created: "2026-11-01" }, { id: "b", date: "2026-11-07" }, { id: "c", date: "2025-01-01", created: "2025-01-02" }], "2026-11-05");
+  assert.match(x, /<loc>https:\/\/s\/archive<\/loc>/);
+  assert.match(x, /\/i\/a<\/loc><lastmod>2026-11-01</);
+  assert.match(x, /\/i\/b<\/loc><lastmod>2026-11-05</);
+  assert.match(x, /\/i\/c<\/loc><lastmod>2025-01-02</);
+});
+test("archiveHtml: קישורים רגילים, מהחדש לישן, עם בריחה", () => {
+  const h = archiveHtml([{ id: "o", parasha: "נח", date: "2025-10-25" }, { id: "n&1", parasha: "לך לך", date: "2026-10-24" }], "https://s");
+  assert.match(h, /<link rel="canonical" href="https:\/\/s\/archive">/);
+  assert.ok(h.indexOf('/i/n&amp;1') < h.indexOf('/i/o"'));
+  assert.match(h, /<a href="\/i\/o">פרשת נח<\/a>/);
 });

@@ -24,7 +24,7 @@ if (AUTH_ON_CUSTOM_DOMAIN && location.hostname === "www.toratsfarad.co.il") fire
 
 
 // ⬇️ פרטי יצירת קשר – השאר ריק ("") כדי להסתיר שדה
-const VERSION = "1.36.3";
+const VERSION = "1.36.4";
 const MAX_UPLOAD = 2 * 1024 * 1024; // 2MB
 const VAPID_KEY = "BA9OIury_RZV-RbHVTaVKhCAgYD207H6XqBBAnXXZy0-y6OZDyeVRGKQNfoJ-YBgqeyqWRYJ6yMFcZ3e8p4wC0Y";              // ⬅️ מפתח Web Push: Firebase Console ← Project settings ← Cloud Messaging ← Web Push certificates. ריק = כפתור ההתראות מוסתר
 const FUNCTIONS_REGION = "europe-west1"; // חייב להיות זהה ל-REGION ב-functions/index.js

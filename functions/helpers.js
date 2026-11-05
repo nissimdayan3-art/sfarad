@@ -61,15 +61,36 @@ ${navHtml}
 </main></body></html>`;
 }
 
-// sitemap.xml: עמוד הבית + כל גיליון (/i/<id>)
-export function sitemapXml(site, issues) {
+// sitemap.xml: עמוד הבית + דף הארכיון + כל גיליון (/i/<id>)
+// lastmod: תאריך היצירה האמיתי (created, ISO) אם קיים, אחרת תאריך הגיליון; אף פעם לא בעתיד
+const isoDay = v => /^\d{4}-\d{2}-\d{2}/.test(String(v || "")) ? String(v).slice(0, 10) : "";
+export function sitemapXml(site, issues, today = new Date().toISOString().slice(0, 10)) {
   const u = (loc, extra) => "<url><loc>" + esc(loc) + "</loc>" + (extra || "") + "</url>";
-  const rows = [u(site + "/", "<changefreq>weekly</changefreq><priority>1.0</priority>")];
+  const rows = [u(site + "/", "<changefreq>weekly</changefreq><priority>1.0</priority>"), u(site + "/archive", "<changefreq>weekly</changefreq><priority>0.8</priority>")];
   for (const x of issues) {
-    const iso = /^\d{4}-\d{2}-\d{2}/.test(String(x.date || "")) ? "<lastmod>" + String(x.date).slice(0, 10) + "</lastmod>" : "";
-    rows.push(u(site + "/i/" + x.id, iso));
+    let d = isoDay(x.created) || isoDay(x.date);
+    if (d && d > today) d = today;
+    rows.push(u(site + "/i/" + x.id, d ? "<lastmod>" + d + "</lastmod>" : ""));
   }
   return '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n' + rows.join("\n") + "\n</urlset>\n";
+}
+
+// /archive: דף HTML בלי JavaScript עם קישורים רגילים לכל הגיליונות (לסריקה של מנועי חיפוש)
+export function archiveHtml(issues, site) {
+  const rows = [...issues].sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
+  const li = x => `<li><a href="/i/${esc(x.id)}">${esc(issueTitle(x))}</a>${isoDay(x.date) ? ` <span>${isoDay(x.date)}</span>` : ""}</li>`;
+  const desc = "ארכיון כל הגיליונות השבועיים של מכון חכמי ספרד – גיליון לזכות הרבים, לפי שבתות ושנים";
+  return `<!doctype html>
+<html lang="he" dir="rtl"><head><meta charset="utf-8">
+<title>ארכיון הגיליונות · חכמי ספרד</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="${esc(desc)}">
+<link rel="canonical" href="${esc(site + "/archive")}">
+<style>body{margin:0;font-family:"Frank Ruhl Libre","David",serif;background:#faf6ee;color:#2a2118;line-height:1.7}main{max-width:720px;margin:0 auto;padding:24px 16px}h1{color:#8a5a1f}li{margin:.3em 0}li span{color:#7a6c5a;font-size:.85em}a{color:#8a5a1f}@media(prefers-color-scheme:dark){body{background:#17130e;color:#f1e8d8}a{color:#d9a35a}}</style></head>
+<body><main><h1>ארכיון הגיליונות</h1><p>${esc(desc)}.</p>
+<ul>${rows.map(li).join("\n")}</ul>
+<p><a href="/">← לאתר הראשי</a> · <a href="/rss.xml">RSS</a></p></main></body></html>
+`;
 }
 
 // rss.xml: הגיליונות האחרונים (issues – מסמכים עם id, כבר ממוינים מהחדש לישן)
