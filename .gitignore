@@ -6,4 +6,3 @@ firebase-debug.*.log
 # מפתחות פריסה – לעולם לא למאגר
 *service-account*.json
 *-firebase-adminsdk-*.json
-firebase-tools-instant-win* 

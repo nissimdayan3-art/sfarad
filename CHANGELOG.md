@@ -7,7 +7,7 @@
 
 ---
 
-## 1. המצב הנוכחי – גרסה 1.36.3
+## 1. המצב הנוכחי – גרסה 1.36.4
 
 **פרויקט Firebase:** `sepharad-fe9e8` · **דומיין:** `www.toratsfarad.co.il` (מחובר ב-Hosting) · **מנהל ראשון:** מסמך `admins/<email באותיות קטנות>` ב-Firestore.
 
@@ -51,6 +51,13 @@
 ---
 
 ## 2. היסטוריית גרסאות
+
+### 1.36.4 – SEO: דף ארכיון לסורקים ו-lastmod אמיתי ב-sitemap [C]
+- **`/archive` (פונקציה חדשה `archive`):** דף HTML בלי JavaScript עם קישורים רגילים `<a href="/i/<id>">` לכל הגיליונות, מהחדש לישן (`archiveHtml` ב-`functions/helpers.js`, rewrite ב-`firebase.json`). מקושר מ-`index.html` (שורת «ארכיון הגיליונות · RSS» מעל הפוטר, ו-`<noscript>` עם תיאור) וכלול ב-sitemap.
+- **sitemap:** `lastmod` נלקח מ-`createTime` של מסמך הגיליון ב-Firestore (לא `updateTime`, כי מוני צפיות/הורדות מעדכנים אותו), ואם אין – מתאריך הגיליון; אף פעם לא בעתיד (חסם את 2026-11-07 שהופיע בגיליון של שבת הקרובה). `sitemapXml(site, issues, today)`.
+- `sw.js`: `/archive`, `/sitemap.xml`, `/rss.xml` לא עוברים דרך ה-SW (תמיד מהשרת).
+- בדיקות חדשות ל-`sitemapXml` ול-`archiveHtml` (סה"כ 68). **דורש פריסה מלאה** (פונקציה חדשה + rewrite).
+- אחרי הפריסה: לבדוק `/archive` ו-`/sitemap.xml`, ובקונסולת החיפוש לשלוח שוב את ה-sitemap.
 
 ### 1.36.3 – SEO, דפי גיליון, קישורים על הדומיין ורשימת שפות [C]
 - **אימות Search Console:** נוספו `public/google7b2ed75d4274b634.html`, `public/google29428a5551176aae.html` ותגית `google-site-verification` ב-`index.html`. **אין למחוק** – גוגל בודקת אותם מדי פעם.
