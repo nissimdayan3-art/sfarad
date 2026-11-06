@@ -353,22 +353,47 @@ export function layoutList(defs, saved) {
   return out.concat(rest);
 }
 
-// ===== הגדרות אתר (meta/site): פרטי קשר והודעה בראש האתר – נערכות בדף הניהול, בלי פריסה =====
-// קישור מותר: https://… / http://… או נתיב פנימי שמתחיל ב-/ (לא //). כל השאר נפסל
-export const safeUrl = u => { u = String(u == null ? "" : u).trim(); return /^https?:\/\/[^\s]+$/i.test(u) || u === "/" || /^\/[^\s\/][^\s]*$/.test(u) ? u : ""; };
-export function cleanSiteCfg(r) {
-  r = r || {}; const c = r.contact || {}, b = r.banner || {}, tx = b.text || {};
-  const s = (v, n) => String(v == null ? "" : v).trim().slice(0, n);
-  const email = s(c.email, 120);
-  return {
-    contact: { email: /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : "", phone: s(c.phone, 40), whatsapp: s(c.whatsapp, 20).replace(/\D/g, ""), address: s(c.address, 200) },
-    banner: { on: !!b.on, text: { he: s(tx.he, 300), en: s(tx.en, 300), fr: s(tx.fr, 300), es: s(tx.es, 300) }, url: safeUrl(b.url), until: /^\d{4}-\d{2}-\d{2}$/.test(String(b.until || "")) ? b.until : "" }
-  };
+
+// ===== מעקב דיוור (1.38.0): חישובים טהורים ללשונית «מעקב דיוור» =====
+const pct = (n, d) => d > 0 ? Math.round(n / d * 1000) / 10 : 0;
+// סיכום גיליון מתוך mailStats/<id>: אחוזים מתוך הנשלחו (נכשלים לא נספרים)
+export function mailRates(st) {
+  st = st || {};
+  const sent = +st.sent || 0, bounced = +st.bounced || 0, opened = +st.opened || 0, clicked = +st.clicked || 0;
+  return { sent, bounced, opened, clicked, opens: +st.opens || 0, clicks: +st.clicks || 0, openPct: pct(opened, sent), clickPct: pct(clicked, sent), bouncePct: pct(bounced, sent + bounced) };
 }
-// ההודעה להצגה בשפה lang (נפילה לעברית), או null: כבויה / פג תוקף / בלי טקסט
-export function bannerFor(cfg, lang, today) {
-  const b = cfg && cfg.banner; if (!b || !b.on) return null;
-  if (b.until && today > b.until) return null;
-  const text = (b.text && (b.text[lang] || b.text.he)) || "";
-  return text ? { text, url: safeUrl(b.url) } : null;
+// מצב נמען בודד: failed / unsub (הוסר אחרי השליחה) / clicked / opened / sent
+export function mailState(r, unsubTs) {
+  r = r || {};
+  if (r.failed) return "failed";
+  if (unsubTs && unsubTs >= (r.ts || 0)) return "unsub";
+  if (r.firstClick) return "clicked";
+  if (r.firstOpen) return "opened";
+  return "sent";
 }
+export const MAIL_STATE_LABEL = { sent: "נשלח, לא נפתח", opened: "נפתח", clicked: "הקליק", failed: "נכשל", unsub: "הוסר מהרשימה" };
+// סינון שורות לפי מצב: all | failed | unopened | opened | clicked | unsub
+export function mailFilter(rows, unsubs, f) {
+  const st = x => mailState(x, unsubs && unsubs[x.email]);
+  return rows.filter(x => {
+    const s = st(x);
+    if (f === "failed") return s === "failed";
+    if (f === "unsub") return s === "unsub";
+    if (f === "unopened") return s === "sent";
+    if (f === "opened") return !x.failed && !!x.firstOpen;
+    if (f === "clicked") return !x.failed && !!x.firstClick;
+    return true;
+  });
+}
+
+
+// ===== ניהול (1.39.0): קיבוץ לשוניות הניהול לקבוצות =====
+// כל לשונית שייכת לקבוצה אחת בדיוק; סדר הקבוצות והלשוניות הוא סדר התצוגה. התוויות נמצאות ב-app.js (הלשונית «issue» משתנה לפי מצב עריכה).
+export const ADMIN_GROUPS = [
+  { id: "issues", label: "גיליונות", tabs: ["list", "issue", "visual", "stats"] },
+  { id: "mail", label: "דיוור", tabs: ["subs", "mailtrack"] },
+  { id: "sages", label: "חכמים", tabs: ["track", "sagemgr", "import"] },
+  { id: "content", label: "תוכן באתר", tabs: ["halacha", "zmanim", "ded", "books", "about", "layout"] },
+  { id: "system", label: "מערכת", tabs: ["backup", "admins"] }
+];
+export const adminGroupOf = tab => ADMIN_GROUPS.find(g => g.tabs.includes(tab)) || ADMIN_GROUPS[0];

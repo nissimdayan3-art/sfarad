@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { esc, gem, parashaTitle, issueTitle, issueDesc, imageOf, shareHtml, sitemapXml, archiveHtml, rssXml, backupFolder, oldBackupFolders, backupReplacer, backupReviver, validBackupDate, validBackupCollection, pushMessage } from "../functions/helpers.js";
+import { esc, gem, parashaTitle, issueTitle, issueDesc, imageOf, shareHtml, sitemapXml, archiveHtml, rssXml, backupFolder, oldBackupFolders, isPermanentMailError, listMediaSources, staleBackupMedia, backupReplacer, backupReviver, validBackupDate, validBackupCollection, pushMessage } from "../functions/helpers.js";
 
 const SITE = "https://example.web.app";
 const issue = { parasha: "נח", num: 487, desc: "**שאלה** והתשובה #1\nשורה שנייה", pages: [{ url: "https://x/p1.jpg" }], cover: { url: "https://x/cover.jpg" } };
@@ -108,14 +108,36 @@ test("archiveHtml: קישורים רגילים, מהחדש לישן, עם ברי
   assert.ok(h.indexOf('/i/n&amp;1') < h.indexOf('/i/o"'));
   assert.match(h, /<a href="\/i\/o">פרשת נח<\/a>/);
 });
-test("archiveHtml: קיבוץ לפי שנה, ניווט שנים, JSON-LD ובריחה", () => {
-  const h = archiveHtml([{ id: "a", parasha: "נח", date: "2025-10-25" }, { id: "b", parasha: "לך לך", date: "2026-10-24" }, { id: "c", parasha: "וירא", date: "2026-10-31" }, { id: "d", parasha: "חיי שרה" }], "https://s");
-  assert.ok(h.indexOf('id="y2026"') < h.indexOf('id="y2025"'), "שנה חדשה קודם");
-  assert.match(h, /<h2 id="y2026">2026 <small>\(2\)<\/small><\/h2>/);
-  assert.match(h, /<a href="#y2025">2025<\/a>/);
-  assert.ok(h.indexOf('/i/c') < h.indexOf('/i/b'), "בתוך שנה: חדש קודם");
-  assert.match(h, /id="yללא-תאריך"/);
-  const ld = JSON.parse(h.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/)[1]);
-  assert.equal(ld["@type"], "CollectionPage"); assert.equal(ld.numberOfItems, 4);
-  assert.match(h, /@media print/);
+
+test("תיקיית גיבוי לפי שעון ישראל ולא UTC", () => {
+  assert.equal(backupFolder(new Date("2026-11-08T22:30:00Z")), "backups/2026-11-09/");   // 00:30 בישראל (חורף)
+  assert.equal(backupFolder(new Date("2026-07-05T21:30:00Z")), "backups/2026-07-06/");   // 00:30 בישראל (קיץ)
+  assert.equal(backupFolder(new Date("2026-11-08T03:00:00Z")), "backups/2026-11-08/");
+});
+test("שגיאת מייל קבועה: רק תיבה/כתובת פסולה; לא אימות ולא זמניות", () => {
+  for (const c of [501, 550, 551, 553]) assert.equal(isPermanentMailError({ responseCode: c }), true, String(c));
+  assert.equal(isPermanentMailError({ code: "EENVELOPE" }), true);
+  for (const c of [421, 450, 452, 530, 535, 554]) assert.equal(isPermanentMailError({ responseCode: c }), false, String(c));
+  assert.equal(isPermanentMailError(null), false);
+  assert.equal(isPermanentMailError({ code: "ETIMEDOUT" }), false);
+});
+test("גיבוי מדיה: מפרט תיקיות לפי prefix, מדלג על backups/ ועל תיקיות ריקות", async () => {
+  const f = n => ({ name: n });
+  const calls = [];
+  const bucket = { async getFiles(q) {
+    calls.push(JSON.stringify(q));
+    if (q.delimiter) return q.pageToken ? [[f("root2.txt")], null, { prefixes: ["sages/"] }] : [[f("root.txt")], { delimiter: "/", autoPaginate: false, pageToken: "t" }, { prefixes: ["issues/", "backups/"] }];
+    if (q.prefix === "issues/") return [[f("issues/"), f("issues/a.pdf"), f("issues/b.jpg")]];
+    if (q.prefix === "sages/") return [[f("sages/x.jpg")]];
+    throw new Error("unexpected " + JSON.stringify(q));
+  } };
+  const names = (await listMediaSources(bucket)).map(x => x.name).sort();
+  assert.deepEqual(names, ["issues/a.pdf", "issues/b.jpg", "root.txt", "root2.txt", "sages/x.jpg"]);
+  assert.ok(!calls.some(c => c.includes("backups/")), "אסור לפרט את backups/");
+});
+test("גיבוי מדיה: מוחקים מהגיבוי רק מה שאינו במקור", () => {
+  const pre = "backups/2026-11-08/storage/";
+  assert.deepEqual(
+    staleBackupMedia([pre + "issues/a.pdf", pre + "issues/old.pdf", pre + "sages/x.jpg", "backups/2026-11-08/issues.json"], ["issues/a.pdf", "sages/x.jpg"], pre),
+    [pre + "issues/old.pdf"]);
 });

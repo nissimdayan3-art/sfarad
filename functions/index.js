@@ -9,13 +9,13 @@
 import { onRequest, onCall, HttpsError } from "firebase-functions/v2/https";
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import { initializeApp } from "firebase-admin/app";
-import { getFirestore, Timestamp } from "firebase-admin/firestore";
+import { getFirestore, Timestamp, FieldValue } from "firebase-admin/firestore";
 import { getMessaging } from "firebase-admin/messaging";
 import { getStorage } from "firebase-admin/storage";
 import { defineSecret } from "firebase-functions/params";
 import nodemailer from "nodemailer";
 import { randomBytes, createHash } from "node:crypto";
-import { pathPart, shareHtml, archiveHtml, sitemapXml, rssXml, backupFolder, oldBackupFolders, backupReplacer, backupReviver, validBackupDate, validBackupCollection, pushMessage, imageOf, issueTitle, emailHtml, emailSubject, unsubToken, verifyUnsub, unsubPage, confirmToken, verifyConfirm, confirmSubject, confirmHtml, confirmPage, emailText, confirmText, MAIL_MAX_PAGES, cleanDetail, SUB_LIMITS, mailBackoffMs } from "./helpers.js";
+import { pathPart, shareHtml, archiveHtml, sitemapXml, rssXml, backupFolder, oldBackupFolders, isPermanentMailError, listMediaSources, staleBackupMedia, trackToken, verifyTrack, TRACK_GIF, applyTrackEvent, backupReplacer, backupReviver, validBackupDate, validBackupCollection, pushMessage, imageOf, issueTitle, emailHtml, emailSubject, unsubToken, verifyUnsub, unsubPage, confirmToken, verifyConfirm, confirmSubject, confirmHtml, confirmPage, emailText, confirmText, MAIL_MAX_PAGES, cleanDetail, SUB_LIMITS, mailBackoffMs } from "./helpers.js";
 
 initializeApp();
 const db = getFirestore();
@@ -74,12 +74,16 @@ export const rss = onRequest({ region: REGION, memory: "256MiB", maxInstances: 2
   res.set("Content-Type", "application/rss+xml; charset=utf-8").set("Cache-Control", "public, max-age=1800, s-maxage=1800").status(200).send(rssXml(SITE, issues));
 });
 
-// גיבוי שבועי (יום א׳ 03:00): כל אוסף ראשי נשמר כקובץ JSON ב-backups/<תאריך>/ בדלי ברירת המחדל.
+// גיבוי שבועי (יום א׳ 03:00): אוספי Firestore וקובצי Storage נשמרים ב-backups/<תאריך>/.
 // כללי Storage לא מתירים גישה לנתיב הזה, כך שרק Admin SDK (הפונקציה) יכול לקרוא/לכתוב.
-// מדלגים על rate (מונים זמניים) ועל private (הגדרות מייל). אוספי משנה (למשל issues/<id>/mailed) לא נכללים.
+// מדלגים על rate (מונים זמניים) ועל private (הגדרות מייל). אוספי משנה עדיין אינם נכללים.
 const BACKUP_SKIP = new Set(["rate", "private"]), BACKUP_KEEP = 8;
+const BACKUP_COPY_BATCH = 20;
+async function inBatches(items, size, fn) {
+  for (let i = 0; i < items.length; i += size) await Promise.all(items.slice(i, i + size).map(fn));
+}
 async function runBackup() {
-  const bucket = getStorage().bucket(), folder = backupFolder(), done = [];
+  const bucket = getStorage().bucket(), folder = backupFolder(), done = [], media = [];
   for (const col of await db.listCollections()) {
     if (BACKUP_SKIP.has(col.id)) continue;
     const snap = await col.get();
@@ -87,10 +91,20 @@ async function runBackup() {
     await bucket.file(folder + col.id + ".json").save(JSON.stringify(data, backupReplacer(Timestamp)), { contentType: "application/json", resumable: false });
     done.push(col.id + ":" + data.length);
   }
-  console.log("backup", folder, done.join(", "));
+  // גיבוי כל האובייקטים של האתר, למעט תיקיית הגיבויים עצמה. הנתיב המקורי נשמר תחת storage/.
+  // לא מוחקים מראש: מעתיקים (דורס) ורק אחרי הצלחה מוחקים מהגיבוי של אותו יום קבצים שכבר אינם באתר,
+  // כך שהרצה שנכשלה באמצע לא הורסת את הגיבוי הקיים של אותו יום.
+  const sourceFiles = await listMediaSources(bucket), mediaPrefix = folder + "storage/";
+  await inBatches(sourceFiles, BACKUP_COPY_BATCH, async file => {
+    await file.copy(bucket.file(mediaPrefix + file.name));
+    media.push(file.name);
+  });
+  const [prev] = await bucket.getFiles({ prefix: mediaPrefix });
+  for (const name of staleBackupMedia(prev.map(f => f.name), sourceFiles.map(f => f.name), mediaPrefix)) await bucket.file(name).delete({ ignoreNotFound: true });
+  console.log("backup", folder, done.join(", "), "storage:", media.length);
   const [files] = await bucket.getFiles({ prefix: "backups/" });
   for (const old of oldBackupFolders(files.map(f => f.name), BACKUP_KEEP)) await bucket.deleteFiles({ prefix: old });
-  return { folder, done };
+  return { folder, done, mediaCount: media.length };
 }
 export const backup = onSchedule({ schedule: "0 3 * * 0", timeZone: "Asia/Jerusalem", region: REGION, timeoutSeconds: 540, memory: "512MiB", maxInstances: 1 }, async () => { await runBackup(); });
 
@@ -103,8 +117,32 @@ export const backupNow = onCall({ region: REGION, timeoutSeconds: 540, memory: "
 export const backupList = onCall({ region: REGION, timeoutSeconds: 60, memory: "256MiB" }, async request => {
   await adminOnly(request);
   const [files] = await getStorage().bucket().getFiles({ prefix: "backups/" }), by = {};
-  for (const f of files) { const m = f.name.match(/^backups\/(\d{4}-\d{2}-\d{2})\/([\w-]+)\.json$/); if (m) (by[m[1]] = by[m[1]] || []).push({ name: m[2], size: parseInt(f.metadata.size, 10) || 0 }); }
-  return { backups: Object.keys(by).sort().reverse().map(date => ({ date, files: by[date].sort((a, b) => a.name.localeCompare(b.name)) })) };
+  for (const f of files) {
+    const size = parseInt(f.metadata.size, 10) || 0;
+    const m = f.name.match(/^backups\/(\d{4}-\d{2}-\d{2})\/([\w-]+)\.json$/);
+    if (m) (by[m[1]] = by[m[1]] || { files: [], mediaCount: 0, mediaBytes: 0 }).files.push({ name: m[2], size });
+    const media = f.name.match(/^backups\/(\d{4}-\d{2}-\d{2})\/storage\//);
+    if (media) { const b = by[media[1]] = by[media[1]] || { files: [], mediaCount: 0, mediaBytes: 0 }; b.mediaCount++; b.mediaBytes += size; }
+  }
+  return { backups: Object.keys(by).sort().reverse().map(date => ({ date, files: by[date].files.sort((a, b) => a.name.localeCompare(b.name)), mediaCount: by[date].mediaCount, mediaBytes: by[date].mediaBytes })) };
+});
+
+// שחזור קובצי Storage מגיבוי. מצב dry מחזיר ספירה לפני ביצוע; השחזור מעתיק לנתיב המקורי.
+export const backupRestoreStorage = onCall({ region: REGION, timeoutSeconds: 540, memory: "512MiB" }, async request => {
+  const email = await adminOnly(request), d = request.data || {};
+  if (!validBackupDate(d.date)) throw new HttpsError("invalid-argument", "תאריך גיבוי לא תקין");
+  const bucket = getStorage().bucket(), prefix = "backups/" + d.date + "/storage/";
+  const [files] = await bucket.getFiles({ prefix });
+  const entries = files.map(file => ({ file, original: file.name.slice(prefix.length) })).filter(x => {
+    const parts = x.original.split("/");
+    return x.original && !x.original.startsWith("backups/") && !parts.some(part => part === ".." || part === ".");
+  });
+  let existing = 0;
+  await inBatches(entries, BACKUP_COPY_BATCH, async x => { if ((await bucket.file(x.original).exists())[0]) existing++; });
+  if (d.dry) return { total: entries.length, existing, missing: entries.length - existing };
+  await inBatches(entries, BACKUP_COPY_BATCH, async x => { await x.file.copy(bucket.file(x.original)); });
+  console.log("backupRestoreStorage by", email, d.date, entries.length);
+  return { total: entries.length, restored: entries.length, overwritten: existing };
 });
 export const backupRestore = onCall({ region: REGION, timeoutSeconds: 540, memory: "512MiB" }, async request => {
   const email = await adminOnly(request), d = request.data || {};
@@ -171,7 +209,7 @@ async function unsubKey() {
 
 // ליבת השליחה: משמשת גם את הקריאה הידנית (mailIssue) וגם את העובד ברקע (mailWorker)
 async function mailCore(d, adminEmail) {
-  const id = cleanId(d.id), test = !!d.test, dry = !!d.dry;
+  const id = cleanId(d.id), test = !!d.test, dry = !!d.dry, track = !test && d.track !== false;
   const max = Math.max(1, Math.min(500, parseInt(d.max, 10) || MAIL_DAILY_MAX));
   const ref = db.doc("issues/" + id), snap = await ref.get();
   if (!snap.exists) throw new HttpsError("not-found", "הגיליון לא נמצא");
@@ -215,31 +253,35 @@ async function mailCore(d, adminEmail) {
   try { await tr.verify(); }
   catch (e) { tr.close(); throw new HttpsError("failed-precondition", "ההתחברות לשרת הדואר נכשלה (" + (e.responseCode || e.code || "") + "): בדוק שם משתמש, סיסמה, שרת ופורט. [משתמש: " + SMTP.user + ", אורך הסיסמה שהוגדרה: " + SMTP_PASS.value().trim().length + "] " + (e.message || "")); }
 
-  const heavy = (attachment ? 1 : 0) + (inlineAtts.length ? 1 : 0), batch = pending.slice(0, heavy === 2 ? Math.min(max, 40) : heavy === 1 ? Math.min(max, 60) : max), t0 = Date.now(); let sent = 0, failed = 0, streak = 0, limited = false, firstErr = "";
+  const heavy = (attachment ? 1 : 0) + (inlineAtts.length ? 1 : 0), batch = pending.slice(0, heavy === 2 ? Math.min(max, 40) : heavy === 1 ? Math.min(max, 60) : max), t0 = Date.now(); let sent = 0, failed = 0, permFailed = 0, streak = 0, limited = false, broke = false, firstErr = "";
   for (let k = 0; k < batch.length && !limited && Date.now() - t0 < 230000; k += 3) {   // עוצרים לפני זמן הריצה המרבי של הפונקציה (300 שנ')
     await Promise.all(batch.slice(k, k + 3).map(async x => {
       if (limited) return;
-      const email = String(x.email).toLowerCase(), lang = x.lang || "he", unsub = SITE + "/u/" + unsubToken(email, uk);
+      const email = String(x.email).toLowerCase(), lang = x.lang || "he", unsub = SITE + "/u/" + unsubToken(email, uk), tt = track ? trackToken(id, email, uk) : "", trk = track ? { open: SITE + "/t/o/" + tt + ".gif", click: SITE + "/t/c/" + tt } : null;
       try {
         await tr.sendMail({
-          from: MAIL_FROM, to: email, subject: (test ? "[בדיקה] " : "") + emailSubject(lang, issue), html: emailHtml(lang, issue, id, SITE, unsub, srcs, x.name), text: emailText(lang, issue, id, SITE, unsub, x.name), attachments: [...(attachment ? [attachment] : []), ...inlineAtts],
+          from: MAIL_FROM, to: email, subject: (test ? "[בדיקה] " : "") + emailSubject(lang, issue), html: emailHtml(lang, issue, id, SITE, unsub, srcs, x.name, trk), text: emailText(lang, issue, id, SITE, unsub, x.name, trk), attachments: [...(attachment ? [attachment] : []), ...inlineAtts],
           headers: { "List-Unsubscribe": "<" + unsub + ">", "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" }
         });
         sent++; streak = 0; if (!test) await db.doc("issues/" + id + "/mailed/" + email).set({ ts: Date.now() });
       } catch (e) {
         const c = e && e.responseCode;
         if (c >= 400 && c < 500) limited = true;               // הגבלת קצב / שגיאה זמנית — עוצרים וממשיכים בלחיצה הבאה
+        else if (!test && isPermanentMailError(e)) {            // תיבה לא קיימת / כתובת פסולה: מסמנים כמטופל כדי שלא ינסו שוב בכל ריצה ולא יחסמו את התור
+          failed++; permFailed++; if (!firstErr) firstErr = (c || (e && e.code) || "") + " " + (e && e.message || "");
+          await db.doc("issues/" + id + "/mailed/" + email).set({ ts: Date.now(), failed: true, err: String(c || (e && e.code) || "").slice(0, 20) });
+        }
         else { failed++; streak++; if (!firstErr) firstErr = (c || (e && e.code) || "") + " " + (e && e.message || ""); }
       }
     }));
-    if (streak >= 5 || (sent === 0 && failed >= 3)) break;                     // תקלת רשת/שרת מתמשכת: לא ממשיכים להמתין על כל נמען
+    if (streak >= 5 || (sent === 0 && failed - permFailed >= 3)) { broke = true; break; }   // תקלת רשת/שרת מתמשכת: לא ממשיכים להמתין על כל נמען
   }
-  limited = limited || sent + failed < batch.length;
   tr.close();
-  if (sent === 0 && firstErr) throw new HttpsError("failed-precondition", "השרת דחה את השליחה: " + firstErr);
-  const remaining = test ? 0 : pending.length - sent;
+  if (sent === 0 && firstErr && permFailed < failed) throw new HttpsError("failed-precondition", "השרת דחה את השליחה: " + firstErr);
+  if (!test && (sent || permFailed)) await db.doc("mailStats/" + id).set({ sent: FieldValue.increment(sent), bounced: FieldValue.increment(permFailed), lastSendAt: Date.now(), track }, { merge: true }).catch(e => console.error("mailStats", e && e.message));
+  const remaining = test ? 0 : pending.length - sent - permFailed;
   if (!test) await ref.update({ mailSentAt: remaining === 0 ? Date.now() : null, mailCount: (issue.mailCount || 0) + sent });
-  return { sent, failed, remaining, limited, test };
+  return { sent, failed, permFailed, remaining, limited, broke, test };
 }
 async function adminOnly(request) {
   const a = request.auth;
@@ -254,9 +296,9 @@ export const mailJobStart = onCall({ region: REGION, timeoutSeconds: 120, memory
   const email = await adminOnly(request), d = request.data || {}, id = cleanId(d.id);
   const q = await mailCore({ id, dry: true }, email);
   if (!q.pending) return { status: "done", remaining: 0, total: q.total };
-  const attach = !!d.attach && !!q.file, embed = !!d.embed && q.pages > 0, per = Math.max(1, Math.min(100, parseInt(d.per, 10) || 25));
+  const track = d.track !== false, attach = !!d.attach && !!q.file, embed = !!d.embed && q.pages > 0, per = Math.max(1, Math.min(100, parseInt(d.per, 10) || 25));
   const heavy = (attach ? 1 : 0) + (embed ? 1 : 0);   // אותן תקרות כמו בשליחה ידנית: 60 עם קובץ או תמונות מוטמעות, 40 עם שניהם
-  await db.doc("mailJobs/" + id).set({ status: "running", per: heavy === 2 ? Math.min(per, 40) : heavy === 1 ? Math.min(per, 60) : per, attach, embed, sent: 0, failed: 0, slow: 0, remaining: q.pending, total: q.total, startedAt: Date.now(), nextAt: 0, lockUntil: 0, by: email, msg: "" });
+  await db.doc("mailJobs/" + id).set({ status: "running", track, per: heavy === 2 ? Math.min(per, 40) : heavy === 1 ? Math.min(per, 60) : per, attach, embed, sent: 0, failed: 0, slow: 0, remaining: q.pending, total: q.total, startedAt: Date.now(), nextAt: 0, lockUntil: 0, by: email, msg: "" });
   return { status: "running", remaining: q.pending };
 });
 export const mailJobControl = onCall({ region: REGION, timeoutSeconds: 30, memory: "256MiB" }, async request => {
@@ -283,8 +325,8 @@ export const mailWorker = onSchedule({ schedule: "every 1 minutes", region: REGI
     if (now - (job.startedAt || now) > 72 * 3600 * 1000) { await ref.update({ status: "expired", msg: "חלפו 72 שעות – לחץ \"נסה שוב\" להמשך", lockUntil: 0 }); continue; }
     let upd;
     try {
-      const r = await mailCore({ id, max: job.per, attach: job.attach, embed: job.embed }, job.by), slow = r.limited ? (job.slow || 0) + 1 : 0;
-      upd = cur => ({ sent: (cur.sent || 0) + r.sent, failed: (cur.failed || 0) + r.failed, remaining: r.remaining, slow, nextAt: r.limited ? Date.now() + mailBackoffMs(slow) : 0, lockUntil: 0, lastAt: Date.now(), msg: r.limited ? "השרת האט את הקצב – ממשיך אוטומטית" : "", ...(r.remaining === 0 ? { status: "done", doneAt: Date.now(), msg: "" } : {}) });
+      const r = await mailCore({ id, max: job.per, attach: job.attach, embed: job.embed, track: job.track !== false }, job.by), throttled = r.limited || r.broke, slow = throttled ? (job.slow || 0) + 1 : 0;
+      upd = cur => ({ sent: (cur.sent || 0) + r.sent, failed: (cur.failed || 0) + r.failed, remaining: r.remaining, slow, nextAt: throttled ? Date.now() + mailBackoffMs(slow) : 0, lockUntil: 0, lastAt: Date.now(), msg: r.limited ? "השרת האט את הקצב – ממשיך אוטומטית" : r.broke ? "תקלה בשליחה – ממשיך אוטומטית" : "", ...(r.remaining === 0 ? { status: "done", doneAt: Date.now(), msg: "" } : {}) });
     } catch (e) { upd = () => ({ status: "error", msg: String((e && e.message) || e).slice(0, 300), lockUntil: 0 }); }
     await db.runTransaction(async t => {                                    // לא דורסים השהיה/ביטול שהמנהל ביקש בזמן הריצה
       const cur = (await t.get(ref)).data() || {}, u = upd(cur);
@@ -294,6 +336,41 @@ export const mailWorker = onSchedule({ schedule: "every 1 minutes", region: REGI
   }
 });
 
+// ===== מעקב דיוור (1.38.0) =====
+// פיקסל פתיחה /t/o/<אסימון>.gif והקלקה /t/c/<אסימון> (מפנה תמיד לדף הגיליון באתר). נרשמים רק GET עם חתימה תקפה.
+// נשמרים רק מונים וחותמות זמן ברשומת הנמען (issues/<id>/mailed/<email>) ובסיכום mailStats/<id>; בלי IP ובלי User-Agent.
+async function recordTrack(id, email, kind) {
+  const ref = db.doc("issues/" + id + "/mailed/" + email), st = db.doc("mailStats/" + id);
+  await db.runTransaction(async t => {
+    const snap = await t.get(ref); if (!snap.exists) return;
+    const r = applyTrackEvent(snap.data(), kind, Date.now()); if (!r) return;
+    t.update(ref, r.update);
+    const inc = {}; for (const k of Object.keys(r.d)) if (r.d[k]) inc[k] = FieldValue.increment(r.d[k]);
+    if (Object.keys(inc).length) t.set(st, inc, { merge: true });
+  });
+}
+export const track = onRequest({ region: REGION, memory: "256MiB", maxInstances: 5 }, async (req, res) => {
+  const kind = pathPart(req.path, 2) === "c" ? "c" : "o", tok = pathPart(req.path, 3).replace(/\.gif$/i, "");
+  let t = null;
+  try { t = verifyTrack(tok, await unsubKey()); } catch (e) { console.error("track", e && e.message); }
+  if (t) { t.id = cleanId(t.id); if (!t.id || !EMAIL_RE.test(t.email)) t = null; }
+  if (t && req.method === "GET") { try { await recordTrack(t.id, t.email, kind); } catch (e) { console.error("track record", e && e.message); } }
+  res.set("Cache-Control", "no-store, max-age=0");
+  if (kind === "c") { res.redirect(302, SITE + (t ? "/i/" + t.id : "/")); return; }
+  res.set("Content-Type", "image/gif").status(200).send(TRACK_GIF);
+});
+
+// ניקוי סימוני כשל של גיליון, כדי שניסיון שליחה נוסף יכלול שוב את הנמענים שנכשלו (למשל אחרי תיקון כתובת)
+export const mailRetryFailed = onCall({ region: REGION, timeoutSeconds: 120, memory: "256MiB" }, async request => {
+  const email = await adminOnly(request), id = cleanId((request.data || {}).id);
+  if (!id) throw new HttpsError("invalid-argument", "חסר מזהה גיליון");
+  const snap = await db.collection("issues/" + id + "/mailed").where("failed", "==", true).get();
+  for (let k = 0; k < snap.docs.length; k += 400) { const b = db.batch(); snap.docs.slice(k, k + 400).forEach(d => b.delete(d.ref)); await b.commit(); }
+  if (snap.size) await db.doc("mailStats/" + id).set({ bounced: FieldValue.increment(-snap.size) }, { merge: true });
+  console.log("mailRetryFailed by", email, id, snap.size);
+  return { cleared: snap.size };
+});
+
 // קישור הסרה: GET מציג אישור, POST (לחיצה / "הסרה בלחיצה אחת" של Gmail) מסיר בפועל
 export const unsub = onRequest({ region: REGION, memory: "256MiB", maxInstances: 5, }, async (req, res) => {
   res.set("Content-Type", "text/html; charset=utf-8").set("Cache-Control", "no-store");
@@ -301,6 +378,7 @@ export const unsub = onRequest({ region: REGION, memory: "256MiB", maxInstances:
   if (!email) { res.status(400).send(unsubPage("bad")); return; }
   if (req.method === "POST") {
     try { await db.doc("subscribers/" + email).delete(); } catch (e) { console.error("unsub", e); }
+    try { await db.doc("unsubs/" + email).set({ ts: Date.now() }); } catch (e) { console.error("unsub log", e); }   // תיעוד להסרות במעקב הדיוור (מנהלים בלבד)
     res.status(200).send(unsubPage("done")); return;
   }
   res.status(200).send(unsubPage("ask", token, email));
@@ -346,7 +424,7 @@ export const confirmSub = onRequest({ region: REGION, memory: "256MiB", maxInsta
     const p = ps.data(), keep = {}; for (const k of ["name", "phone", "city"]) if (p[k]) keep[k] = cleanDetail(p[k], SUB_LIMITS[k]);      // לא דורסים פרטים שהמנהל כבר הזין
     const cur = await sr.get(), had = cur.exists ? cur.data() : {}; for (const k of Object.keys(keep)) if (had[k]) delete keep[k];
     await sr.set({ email, lang: LANGS.includes(p.lang) ? p.lang : "he", ts: had.ts || Date.now(), ...keep }, { merge: true });
-    await pr.delete().catch(() => {}); res.status(200).send(confirmPage("done")); return;
+    await pr.delete().catch(() => {}); await db.doc("unsubs/" + email).delete().catch(() => {}); res.status(200).send(confirmPage("done")); return;
   }
   res.status(200).send((await sr.get()).exists ? confirmPage("done") : confirmPage("bad"));    // לחיצה כפולה על קישור שכבר אושר
 });

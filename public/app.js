@@ -2,7 +2,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
 import { getFirestore, collection, query, orderBy, onSnapshot, doc, getDoc, getDocs, setDoc, updateDoc, increment, writeBatch, deleteDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
 import { getAuth, onAuthStateChanged, signInWithPopup, signInWithRedirect, getRedirectResult, GoogleAuthProvider, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { cleanSiteCfg, bannerFor, layoutList, parseDedRows, parseSubRows, subDoc, SUB_LIM, cleanField, onlyCountersChanged, linkParts, D, heLetters, MONTHS, hebOf, weekKeys, dayKeys, gday, gem, findSagesInText, sageQuery, sageSearch, sortKey, isoOf, todayStr, halIdx, halKeysFor, halRowKeys, addDays, carryPhotos, cleanBooks, parseZmanimRows, zmCityName, zmCityId } from "./lib.js";
+import { layoutList, parseDedRows, parseSubRows, subDoc, SUB_LIM, cleanField, onlyCountersChanged, linkParts, D, heLetters, MONTHS, hebOf, weekKeys, dayKeys, gday, gem, findSagesInText, sageQuery, sageSearch, sortKey, isoOf, todayStr, halIdx, halKeysFor, halRowKeys, addDays, carryPhotos, cleanBooks, parseZmanimRows, zmCityName, zmCityId, mailRates, mailState, mailFilter, MAIL_STATE_LABEL, ADMIN_GROUPS, adminGroupOf } from "./lib.js";
 
 // ⬇️ הדבק כאן את ה-config של הפרויקט שלך
 const FALLBACK_CONFIG = {
@@ -24,7 +24,7 @@ if (AUTH_ON_CUSTOM_DOMAIN && location.hostname === "www.toratsfarad.co.il") fire
 
 
 // ⬇️ פרטי יצירת קשר – השאר ריק ("") כדי להסתיר שדה
-const VERSION = "1.36.6";
+const VERSION = "1.39.0";
 const MAX_UPLOAD = 2 * 1024 * 1024; // 2MB
 const VAPID_KEY = "BA9OIury_RZV-RbHVTaVKhCAgYD207H6XqBBAnXXZy0-y6OZDyeVRGKQNfoJ-YBgqeyqWRYJ6yMFcZ3e8p4wC0Y";              // ⬅️ מפתח Web Push: Firebase Console ← Project settings ← Cloud Messaging ← Web Push certificates. ריק = כפתור ההתראות מוסתר
 const FUNCTIONS_REGION = "europe-west1"; // חייב להיות זהה ל-REGION ב-functions/index.js
@@ -72,7 +72,7 @@ const partsOf = n => n.replace(/^פרשת\s+/, "").split(/\s*[-–]\s*/);
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app), storage = getStorage(app), auth = getAuth(app);
 const ADMIN_PAGE = document.body.dataset.page === "admin";
-let aboutOpen = null, subTimer = 0, subEl = null; let focusId = null, pendingScroll = null, lastPub = null, yzOpen = false, ABOUT = null; let adminTab = ADMIN_PAGE ? "list" : "issue"; let view = "weekly"; let parQ = "", parOpen = false, parBook = null; let issues = [], admins = [], user = null, isAdmin = false, showAdmin = ADMIN_PAGE, selYear = null, mode = "year", selPar = null, filter = "", editing = null, unsubAdmins = null;
+let aboutOpen = null, subTimer = 0, subEl = null; let focusId = null, pendingScroll = null, lastPub = null, yzOpen = false, ABOUT = null; const ADMIN_LAST = {}; let adminTab = ADMIN_PAGE ? "list" : "issue"; let view = "weekly"; let parQ = "", parOpen = false, parBook = null; let issues = [], admins = [], user = null, isAdmin = false, showAdmin = ADMIN_PAGE, selYear = null, mode = "year", selPar = null, filter = "", editing = null, unsubAdmins = null;
 
 const $ = id => document.getElementById(id);
 if (ADMIN_PAGE) lang = "he";
@@ -343,8 +343,9 @@ function mailBtn(id, short, test) {
       let per = Math.max(1, Math.min(100, parseInt(ans, 10) || 25)), attach = false, embed = false;
       if (q.pages) embed = confirm("להטמיע את " + q.pages + " תמונות העמודים בתוך המייל?\n\nאישור = להטמיע (מוצג גם בלי לאשר תמונות; המייל כבד יותר)\nביטול = קישורים לתמונות באתר (מייל קל)");
       if (q.file) attach = confirm("לצרף למייל גם את קובץ הגיליון (" + (q.file.size ? (q.file.size / 1048576).toFixed(1) + " MB" : q.file.ext.toUpperCase()) + ")?\n\nאישור = לצרף את הקובץ\nביטול = לשלוח רק קישור לקריאה");
+      const track = confirm("לכלול בדיוור מעקב פתיחות והקלקות?\n\nאישור = כן (נוסף פיקסל קטן והודעה בתחתית המייל; התוצאות בלשונית «מעקב דיוור»)\nביטול = בלי מעקב");
       if (attach && embed) per = Math.min(per, 40); else if (attach || embed) per = Math.min(per, 60);
-      await callFn("mailJobStart", { id, per, attach, embed });
+      await callFn("mailJobStart", { id, per, attach, embed, track });
       alert("\u2713 השליחה הועברה לשרת ותמשיך ברקע גם אם תסגור את הלשונית.\nההתקדמות מוצגת על הכפתור; אפשר להשהות ולהמשיך.");
     } catch (e) { b.textContent = "שגיאה: " + (e && e.message || e); setTimeout(upd, 8000); }
   };
@@ -354,7 +355,7 @@ function renderSubscribe() {
   const B = $("subscribe"); B.innerHTML = "";
   const c = el("div", "card"); c.style.textAlign = "center"; c.appendChild(el("b", null, t("subTitle")));
   const row = el("div"); row.style.cssText = "display:flex;gap:8px;margin-top:8px";
-  const e = el("input"); e.type = "email"; e.placeholder = t("subPlaceholder"); e.autocomplete = "email"; e.style.cssText = "direction:ltr;margin:0;flex:1";
+  const e = el("input"); e.type = "email"; e.placeholder = t("subPlaceholder"); e.setAttribute("aria-label", t("subPlaceholder")); e.autocomplete = "email"; e.style.cssText = "direction:ltr;margin:0;flex:1";
   const hp = el("input"); hp.type = "text"; hp.tabIndex = -1; hp.autocomplete = "off"; hp.setAttribute("aria-hidden", "true"); hp.style.cssText = "position:absolute;width:1px;height:1px;margin:-1px;padding:0;border:0;overflow:hidden;clip:rect(0,0,0,0);opacity:0;pointer-events:none";
   const b = el("button", "btn", t("subBtn")); b.style.marginTop = "0"; const m = el("div", "msg");
   const more = el("details"); more.style.cssText = "margin-top:10px;text-align:start"; more.appendChild(el("summary", null, t("subMore")));
@@ -391,40 +392,76 @@ async function aboutEditor(c) {
   };
 }
 
-// 1.36.6: לשונית «הגדרות אתר» – פרטי קשר (כותרת תחתית) והודעה בראש האתר. נשמר ב-meta/site ומופיע מיד לכל המבקרים, בלי פריסה
-async function siteAdmin(c) {
-  c.appendChild(el("h3", null, "הגדרות האתר"));
-  c.appendChild(el("div", "hint", "השינויים מופיעים באתר מיד, בלי העלאה. את שאר האתר (טקסטים ועיצוב) עורכים ב«עורך חזותי» ו«פריסה». שינויי קוד עדיין דורשים פריסה."));
-  let cur = {}; try { const d = await getDoc(doc(db, "meta", "site")); if (d.exists()) cur = cleanSiteCfg(d.data()); } catch (e) { c.appendChild(el("div", "msg", "שגיאה בטעינה: " + e.message)); return; }
-  const C = cur.contact || {}, B = cur.banner || { text: {} };
-  const F = {}, field = (box, key, label, val, mk) => { box.appendChild(el("label", null, label)); const x = mk ? mk() : el("input"); if (!mk) x.type = "text"; x.value = val || ""; F[key] = x; box.appendChild(x); return x; };
-  const cc = el("div", "card"); cc.style.marginTop = "12px"; c.appendChild(cc);
-  cc.appendChild(el("h4", null, "פרטי קשר (מוצגים בתחתית האתר)"));
-  field(cc, "email", "מייל", C.email ?? CONTACT.email); F.email.dir = "ltr";
-  field(cc, "phone", "טלפון", C.phone ?? CONTACT.phone); F.phone.dir = "ltr";
-  field(cc, "whatsapp", "וואטסאפ (מספר בינלאומי, בלי + ומקפים, למשל 972501234567)", C.whatsapp ?? CONTACT.whatsapp); F.whatsapp.dir = "ltr";
-  field(cc, "address", "כתובת", C.address ?? CONTACT.address);
-  cc.appendChild(el("div", "hint", "שדה ריק = לא מוצג. כתובת האתר (" + CONTACT.site + ") קבועה ולא נערכת מכאן."));
-  const bb = el("div", "card"); bb.style.marginTop = "12px"; c.appendChild(bb);
-  bb.appendChild(el("h4", null, "הודעה בראש האתר"));
-  const lab = el("label"); const on = el("input"); on.type = "checkbox"; on.checked = !!B.on; lab.append(on, " הצג הודעה"); bb.appendChild(lab);
-  const area = () => { const x = el("textarea"); x.style.minHeight = "60px"; return x; };
-  [["he", "עברית (חובה כדי שההודעה תוצג)"], ["en", "English (אופציונלי)"], ["fr", "Français (אופציונלי)"], ["es", "Español (אופציונלי)"]].forEach(([k, l]) => field(bb, "t_" + k, l, (B.text || {})[k], area));
-  field(bb, "url", "קישור (אופציונלי: https://… או /archive)", B.url); F.url.dir = "ltr";
-  field(bb, "until", "מוצגת עד (אופציונלי, כולל התאריך הזה)", B.until); F.until.type = "date";
-  bb.appendChild(el("div", "hint", "שפה בלי תרגום מציגה את הטקסט בעברית. מי שסגר את ההודעה לא יראה אותה שוב עד סגירת הדפדפן."));
-  const b = el("button", "btn", "שמירה"), m = el("div", "msg"); c.append(b, m);
-  b.onclick = async () => {
-    b.disabled = true; m.textContent = "שומר…";
-    try {
-      const d = cleanSiteCfg({ contact: { email: F.email.value, phone: F.phone.value, whatsapp: F.whatsapp.value, address: F.address.value }, banner: { on: on.checked, text: { he: F.t_he.value, en: F.t_en.value, fr: F.t_fr.value, es: F.t_es.value }, url: F.url.value, until: F.until.value } });
-      const bad = []; if (F.email.value.trim() && !d.contact.email) bad.push("מייל לא תקין"); if (F.url.value.trim() && !d.banner.url) bad.push("קישור לא תקין (חייב להתחיל ב-https:// או /)");
-      if (bad.length) { m.textContent = "⚠ " + bad.join(" · "); b.disabled = false; return; }
-      await setDoc(doc(db, "meta", "site"), { version: Date.now(), ...d });
-      SITE_CFG = d; applySiteContact(); m.textContent = "✓ נשמר" + (d.banner.on && !d.banner.text.he ? " (ההודעה לא תוצג: חסר טקסט בעברית)" : "");
-    } catch (e) { m.textContent = "שגיאה: " + e.message; }
-    b.disabled = false;
+// ===== מעקב דיוור (1.38.0) =====
+// סקירה לכל הגיליונות (mailStats) ופירוט לנמען בגיליון נבחר (issues/<id>/mailed). הנתונים נכתבים מהשרת בלבד.
+async function mailTrackView(c0) {
+  const c = el("div"); c0.appendChild(c);
+  c.appendChild(el("h3", null, "מעקב דיוור"));
+  const info = el("div", "msg", "טוען…"); c.appendChild(info);
+  let stats = {}, jobs = {};
+  try {
+    (await getDocs(collection(db, "mailStats"))).docs.forEach(d => stats[d.id] = d.data());
+    (await getDocs(collection(db, "mailJobs"))).docs.forEach(d => jobs[d.id] = d.data());
+  } catch (e) { info.textContent = "שגיאה בטעינה: " + e.message + " (ייתכן שחוקי Firestore טרם נפרסו: bash deploy.sh)"; return; }
+  const rows = issues.filter(x => stats[x.id] || jobs[x.id]);
+  info.textContent = rows.length ? rows.length + " גיליונות נשלחו במייל. לחצו על גיליון לפירוט לפי נמען." : "עוד לא נשלח גיליון במייל (או שהשליחה הייתה לפני הוספת המעקב).";
+  c.appendChild(el("div", "hint", "פתיחות מוערכות בקירוב: קליינטי מייל כמו Apple Mail טוענים תמונות מראש, ולכן ייתכנו פתיחות שלא קרו בפועל, ומי שחוסם תמונות לא יופיע כפותח. הקלקות מהימנות יותר, אך סורקי אבטחה עלולים ללחוץ על קישורים. המעקב נשמר רק כמונים וזמנים, בלי כתובת IP."));
+  const detail = el("div"); detail.style.marginTop = "16px";
+  const tb = el("table"); tb.style.cssText = "width:100%;border-collapse:collapse;margin-top:8px;font-size:.92rem";
+  const hd = el("tr"); ["גיליון", "נשלחו", "נכשלו", "נפתחו", "הקליקו", "סטטוס"].forEach(h => { const th = el("th", null, h); th.style.cssText = "text-align:start;padding:6px 8px;border-bottom:2px solid var(--line)"; hd.appendChild(th); }); tb.appendChild(hd);
+  const JS = { running: "שולח", paused: "מושהה", done: "הושלם", error: "שגיאה", stopped: "הופסק", expired: "פג תוקף" };
+  rows.forEach(i => {
+    const r = mailRates(stats[i.id]), j = jobs[i.id], tr = el("tr"); tr.style.cursor = "pointer"; tr.tabIndex = 0;
+    const nm = (i.num ? "גיליון " + i.num + " · " : "") + (/^שבת/.test(i.parasha || "") ? i.parasha : "פרשת " + String(i.parasha || "").replace(/^פרשת\s+/, ""));
+    const noTrack = stats[i.id] && stats[i.id].track === false;
+    [nm + (i.date ? " (" + i.date + ")" : ""), r.sent, r.bounced || "", noTrack ? "ללא מעקב" : r.opened + " (" + r.openPct + "%)", noTrack ? "" : r.clicked + " (" + r.clickPct + "%)", j ? (JS[j.status] || j.status) + (j.remaining ? " · נותרו " + j.remaining : "") : ""].forEach(v => { const td = el("td", null, String(v)); td.style.cssText = "padding:6px 8px;border-bottom:1px solid var(--line)"; tr.appendChild(td); });
+    const open = () => mailTrackDetail(detail, i, nm);
+    tr.onclick = open; tr.onkeydown = e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); } };
+    tb.appendChild(tr);
+  });
+  if (rows.length) { const w = el("div"); w.style.overflowX = "auto"; w.appendChild(tb); c.appendChild(w); }
+  c.appendChild(detail);
+}
+async function mailTrackDetail(box, issue, name) {
+  box.innerHTML = ""; box.appendChild(el("h4", null, name)); const info = el("div", "msg", "טוען…"); box.appendChild(info);
+  let rows = [], unsubs = {};
+  try {
+    rows = (await getDocs(collection(db, "issues", issue.id, "mailed"))).docs.map(d => ({ ...d.data(), email: d.id }));
+    (await getDocs(collection(db, "unsubs"))).docs.forEach(d => unsubs[d.id] = d.data().ts || 0);
+  } catch (e) { info.textContent = "שגיאה בטעינה: " + e.message; return; }
+  rows.sort((a, b) => (b.lastClick || b.lastOpen || b.ts || 0) - (a.lastClick || a.lastOpen || a.ts || 0));
+  const cnt = k => mailFilter(rows, unsubs, k).length;
+  info.textContent = rows.length + " נמענים · נכשלו " + cnt("failed") + " · נפתחו " + cnt("opened") + " · הקליקו " + cnt("clicked") + " · לא נפתחו " + cnt("unopened") + " · הוסרו " + cnt("unsub");
+  let f = "all"; const chips = el("div", "chips"), list = el("div"), W = el("div"); W.style.overflowX = "auto";
+  const cq = v => { v = String(v == null ? "" : v); if (/^[=+\-@\t\r]/.test(v)) v = "'" + v; return '"' + v.replace(/"/g, '""') + '"'; };
+  const dt = ts => ts ? new Date(ts).toLocaleString("he-IL", { dateStyle: "short", timeStyle: "short" }) : "";
+  const draw = () => {
+    list.innerHTML = "";
+    const data = mailFilter(rows, unsubs, f), tb = el("table"); tb.style.cssText = "width:100%;border-collapse:collapse;margin-top:8px;font-size:.9rem";
+    const hd = el("tr"); ["כתובת", "מצב", "נשלח", "פתיחות", "פתיחה אחרונה", "הקלקות"].forEach(h => { const th = el("th", null, h); th.style.cssText = "text-align:start;padding:5px 8px;border-bottom:2px solid var(--line)"; hd.appendChild(th); }); tb.appendChild(hd);
+    data.slice(0, 500).forEach(x => {
+      const tr = el("tr"), st = mailState(x, unsubs[x.email]);
+      [x.email, MAIL_STATE_LABEL[st] + (x.failed && x.err ? " (" + x.err + ")" : ""), dt(x.ts), x.opens || "", dt(x.lastOpen), x.clicks || ""].forEach((v, k) => { const td = el("td", null, String(v)); td.style.cssText = "padding:5px 8px;border-bottom:1px solid var(--line)" + (k === 0 ? ";direction:ltr;text-align:left" : ""); tr.appendChild(td); });
+      tb.appendChild(tr);
+    });
+    W.innerHTML = ""; W.appendChild(tb); list.appendChild(W);
+    if (data.length > 500) list.appendChild(el("div", "hint", "מוצגות 500 הראשונות מתוך " + data.length + ". הייצוא ל-CSV כולל את כולן."));
+    if (!data.length) list.appendChild(el("div", "hint", "אין נמענים במצב הזה."));
   };
+  [["all", "הכול"], ["failed", "נכשלו"], ["unopened", "לא נפתחו"], ["opened", "נפתחו"], ["clicked", "הקליקו"], ["unsub", "הוסרו"]].forEach(([k, l]) => { const b = el("button", "chip" + (k === f ? " on" : ""), l + " (" + cnt(k) + ")"); b.onclick = () => { f = k; chips.querySelectorAll("button").forEach(x => x.classList.remove("on")); b.classList.add("on"); draw(); }; chips.appendChild(b); });
+  const act = el("div", "actions");
+  const ex = el("button", "btn sm", "⬇ ייצוא CSV"); ex.onclick = () => {
+    const lines = ["email,state,sent,opens,first_open,last_open,clicks,first_click,last_click,error"].concat(mailFilter(rows, unsubs, f).map(x => [x.email, mailState(x, unsubs[x.email]), x.ts ? new Date(x.ts).toISOString() : "", x.opens || 0, x.firstOpen ? new Date(x.firstOpen).toISOString() : "", x.lastOpen ? new Date(x.lastOpen).toISOString() : "", x.clicks || 0, x.firstClick ? new Date(x.firstClick).toISOString() : "", x.lastClick ? new Date(x.lastClick).toISOString() : "", x.err].map(cq).join(",")));
+    const lk = document.createElement("a"); lk.href = URL.createObjectURL(new Blob(["\ufeff" + lines.join("\r\n")], { type: "text/csv;charset=utf-8" })); lk.download = "מעקב-דיוור-" + (issue.num || issue.id) + ".csv"; lk.click();
+  };
+  act.appendChild(ex);
+  if (cnt("failed")) {
+    const rt = el("button", "btn sm ghost", "↻ ניסיון חוזר לנכשלים (" + cnt("failed") + ")");
+    rt.title = "מנקה את סימוני הכשל; אחר כך אפשר ללחוץ שוב על שליחה במייל בלשונית «גיליונות», והנכשלים ייכללו";
+    rt.onclick = async () => { if (!confirm("לנקות את סימוני הכשל של " + cnt("failed") + " נמענים?\n\nאחר כך לחצו שוב על «שליחה במייל» בגיליון כדי לנסות לשלוח אליהם.")) return; rt.disabled = true; try { const r = await callFn("mailRetryFailed", { id: issue.id }); rt.textContent = "✓ נוקו " + r.cleared + ". אפשר לשלוח שוב"; } catch (e) { rt.textContent = "שגיאה: " + (e && e.message || e); } };
+    act.appendChild(rt);
+  }
+  box.append(chips, act, list); draw();
 }
 
 async function subsView(c0) {
@@ -686,7 +723,7 @@ function showSub(btn, v) {
 function render() {
   $("status").textContent = "";
   if (focusId && issues.length) { const f0 = issues.find(x => x.id === focusId); if (f0) { view = "issues"; mode = "year"; selYear = yearOf(f0); filter = ""; $("q").value = ""; pendingScroll = focusId; } focusId = null; }
-  if (!TXT && !txtLoading) loadTexts(); if (!SITE_CFG && !siteLoading) loadSite();
+  if (!TXT && !txtLoading) loadTexts();
   applyBottom(); hideSub(); const N = $("nav"); N.innerHTML = "";
   (() => { if (!LAYOUT && !layoutLoading) loadLayout(); const l = layoutList(NAV_IDS.map(x => [x[0], x[1]]), LY().nav).filter(x => editMode || !x.hide); const ok = l.length ? l : layoutList(NAV_IDS, null); if (!ok.some(x => x.id === view)) view = ok[0].id; return ok.map(x => [x.id, x.label, x.hide]); })().forEach(([v, k, hd]) => {
     const b = el("button", "chip" + (view === v ? " on" : ""), t(k)); b.onclick = () => { view = v; render(); }; if (editMode) { b.classList.add("edit-blk"); b.dataset.edG = "nav"; b.dataset.edId = v; if (hd) b.classList.add("ed-off"); b.appendChild(edBar("nav", v, hd, true)); } N.appendChild(b);
@@ -708,7 +745,7 @@ function render() {
   if (mode === "par" && !filter && issues.length) {
     const cnt = {}; issues.forEach(i => partsOf(i.parasha).forEach(x => cnt[x] = (cnt[x] || 0) + 1));
     if (selPar) { const sc = el("button", "chip on", t("parasha") + trName(selPar) + " ✕"); sc.style.marginBottom = "6px"; sc.onclick = () => { selPar = null; parQ = ""; render(); }; P.appendChild(sc); }
-    const inp = el("input"); inp.type = "text"; inp.className = "ui"; inp.placeholder = t("parSearch"); inp.value = parQ; inp.autocomplete = "off";
+    const inp = el("input"); inp.type = "text"; inp.className = "ui"; inp.placeholder = t("parSearch"); inp.setAttribute("aria-label", t("parSearch")); inp.value = parQ; inp.autocomplete = "off";
     const res = el("div", "pres");
     const drawRes = () => {
       res.innerHTML = ""; res.hidden = false; const q = parQ.trim().replace(/^פרשת\s+/, "").toLowerCase();
@@ -878,7 +915,7 @@ async function renderSages() {
   if (!all.length) { V.appendChild(el("div", "card empty", t("noSages"))); return; }
   const used = usedMap(null), main = mainCountries(all);
   const mk = (opts, cur, fn) => { const sl = el("select"); opts.forEach(([v, l]) => { const o = el("option", null, l); o.value = v; sl.appendChild(o); }); sl.value = cur; sl.onchange = () => { fn(sl.value); sv.limit = 50; draw(); }; return sl; };
-  const q = el("input"); q.type = "text"; q.placeholder = t("sName"); q.value = sv.q; q.oninput = () => { sv.q = q.value; sv.limit = 50; draw(); };
+  const q = el("input"); q.type = "text"; q.placeholder = t("sName"); q.setAttribute("aria-label", t("sName")); q.value = sv.q; q.oninput = () => { sv.q = q.value; sv.limit = 50; draw(); };
   const cnt = el("div", "msg"), list = el("div"), more = el("button", "btn ghost", t("more")); more.onclick = () => { sv.limit += 50; draw(); };
   V.append(q,
     mk([["", t("allCountries")], ...main.slice().sort((x, y) => ctName(x[0]).localeCompare(ctName(y[0]), lang)).map(([k, n]) => [k, ctName(k) + " (" + n + ")"]), ["__other", t("otherC")]], sv.country, v => sv.country = v),
@@ -1101,7 +1138,7 @@ function issueForm(c) {
   };
   const sgBox = el("div"); sgBox.append(el("label", null, "גאונים בגיליון"), chipsBox, artBox, el("div", "hint", "חפשו ידנית, הציעו לפי תאריך ההילולא, או לחצו «זהה גאונים מהמלל» כדי שהאתר יחפש במלל המסביר שמות של גאונים מהרשימה."), sgq, sugSel, sugBtn, txtBtn, stat, resBox);
   redraw();
-  const fi = el("input"); fi.type = "file"; fi.accept = "application/pdf,image/*";
+  const fi = el("input"); fi.type = "file"; fi.accept = "application/pdf,image/jpeg,image/png,image/webp,image/gif";
   fi.onchange = () => { const f0 = fi.files[0]; if (f0 && f0.size > MAX_UPLOAD) { m.textContent = "הקובץ גדול מדי (" + mb(f0.size) + "). המקסימום הוא 2 MB."; fi.value = ""; } else m.textContent = ""; };
   const b = el("button", "btn", old ? "שמירת שינויים" : "העלאה ופרסום"), m = el("div", "msg");
   c.append(el("h3", null, old ? "עריכת גיליון" : "העלאת גיליון חדש"), el("label", null, "פרשה / שבת"), pa, po, el("label", null, "תאריך השבת"), dateRow, da, el("label", null, "מספר גיליון (יוצג באותיות, למשל רט״ו)"), nu,
@@ -1573,25 +1610,6 @@ document.addEventListener("click", e => {
   if (!TXT_ON) return; const sp = e.target.closest && e.target.closest(".ed-txt");
   if (sp) { e.preventDefault(); e.stopPropagation(); edTextPop(sp); } else if (!e.target.closest(".ed-pop")) document.querySelectorAll(".ed-pop").forEach(n => n.remove());
 }, true);
-// 1.36.6: הגדרות אתר (meta/site) – פרטי קשר והודעה בראש האתר, נערכים בלשונית «הגדרות אתר» בדף הניהול
-let SITE_CFG = null, siteLoading = false;
-function applySiteContact() { const c = SITE_CFG && SITE_CFG.contact; if (c) ["email", "phone", "whatsapp", "address"].forEach(k => { if (typeof c[k] === "string") CONTACT[k] = c[k]; }); }
-async function loadSite() {
-  if (siteLoading) return; siteLoading = true;
-  try { const d = await getDoc(doc(db, "meta", "site")); SITE_CFG = d.exists() ? cleanSiteCfg(d.data()) : {}; if (d.exists() && !d.data().contact) delete SITE_CFG.contact; } catch { SITE_CFG = {}; }
-  siteLoading = false; applySiteContact(); applyLang();
-}
-function renderBanner() {
-  let n = $("banner");
-  const b = ADMIN_PAGE ? null : bannerFor(SITE_CFG, lang, todayStr());
-  let dismissed = false; try { dismissed = !!b && sessionStorage.getItem("bannerX") === b.text; } catch {}
-  if (!b || dismissed) { if (n) n.remove(); return; }
-  if (!n) { n = el("div", "site-banner"); n.id = "banner"; n.setAttribute("role", "status"); const tb = document.querySelector(".topband"); if (!tb) return; tb.after(n); }
-  n.innerHTML = "";
-  const msg = b.url ? el("a", null, b.text) : el("span", null, b.text); if (b.url) { msg.href = b.url; if (/^https?:/i.test(b.url)) { msg.target = "_blank"; msg.rel = "noopener"; } }
-  const x = el("button", null, "✕"); x.setAttribute("aria-label", "✕"); x.onclick = () => { try { sessionStorage.setItem("bannerX", b.text); } catch {} n.remove(); };
-  n.append(msg, x);
-}
 async function loadTexts() {
   if (txtLoading) return; txtLoading = true;
   try { const d = await getDoc(doc(db, "meta", "texts")); TXT = d.exists() ? JSON.parse(d.data().json || "{}") : {}; } catch { TXT = {}; }
@@ -1992,11 +2010,11 @@ function bookForm(c) {
 }
 
 // 1.36.3: לשונית «גיבויים» – גיבוי מיידי, רשימת גיבויים ושחזור אוסף (רק מסמכים חסרים, או דריסה). הכל דרך הפונקציות backupNow / backupList / backupRestore
-const BK_NAMES = { issues: "גיליונות", subscribers: "נרשמים", admins: "מנהלים", pushTokens: "מנויי התראות", pendingSubs: "ממתינים לאישור מייל", meta: "הגדרות כלליות", mailJobs: "משימות שליחה" };
+const BK_NAMES = { issues: "גיליונות", subscribers: "נרשמים", admins: "מנהלים", pushTokens: "מנויי התראות", mailStats: "סיכומי דיוור", unsubs: "הסרות מהרשימה", pendingSubs: "ממתינים לאישור מייל", meta: "הגדרות כלליות", mailJobs: "משימות שליחה" };
 async function backupView(c0) {
   const c = el("div"); c0.appendChild(c);
   c.appendChild(el("h3", null, "גיבויים ושחזור"));
-  c.appendChild(el("div", "hint", "גיבוי אוטומטי כל יום א׳ ב-03:00; נשמרים 8 אחרונים. השחזור מחזיר מסמכים ל-Firestore בלבד (לא קבצי תמונה או PDF)."));
+  c.appendChild(el("div", "hint", "גיבוי אוטומטי כל יום א׳ ב-03:00; נשמרים 8 אחרונים. הגיבוי כולל נתוני Firestore וגם קובצי PDF ותמונות מ-Storage. אפשר לשחזר כל אוסף או את כל קובצי המדיה."));
   const now = el("button", "btn sm", "💾 גבה עכשיו"), msg = el("div", "msg", "טוען…"), list = el("div");
   c.append(now, msg, list);
   const load = async () => {
@@ -2006,7 +2024,25 @@ async function backupView(c0) {
     msg.textContent = res.backups.length ? res.backups.length + " גיבויים" : "אין עדיין גיבויים. אפשר ללחוץ «גבה עכשיו».";
     res.backups.forEach(b => {
       const box = el("details", "card"); box.style.marginTop = "10px";
-      box.appendChild(el("summary", null, new Date(b.date + "T12:00:00").toLocaleDateString("he-IL", { weekday: "long", day: "numeric", month: "long", year: "numeric" }) + " · " + b.files.length + " אוספים"));
+      box.appendChild(el("summary", null, new Date(b.date + "T12:00:00").toLocaleDateString("he-IL", { weekday: "long", day: "numeric", month: "long", year: "numeric" }) + " · " + b.files.length + " אוספים · " + (b.mediaCount || 0) + " קובצי מדיה"));
+      if (b.mediaCount) {
+        const mediaRow = el("div"); mediaRow.style.cssText = "margin:10px 0;padding-top:8px;border-top:1px solid var(--line)";
+        const mediaBtn = el("button", "btn sm", "שחזור קובצי PDF ותמונות"), mediaOut = el("div", "msg");
+        mediaRow.append(el("span", null, "קובצי מדיה · " + b.mediaCount + " קבצים · " + Math.max(1, Math.round((b.mediaBytes || 0) / 1024)) + " KB "), mediaBtn, mediaOut);
+        mediaBtn.onclick = async () => {
+          mediaBtn.disabled = true; mediaOut.textContent = "בודק…";
+          try {
+            const q = await callFn("backupRestoreStorage", { date: b.date, dry: true });
+            mediaOut.textContent = "בגיבוי " + q.total + " קבצים · קיימים כיום " + q.existing + " · חסרים " + q.missing + ".";
+            if (!confirm("לשחזר " + q.total + " קובצי PDF ותמונות מגיבוי " + b.date + "? קבצים קיימים בנתיב המקורי יוחלפו בגרסת הגיבוי.")) return;
+            mediaOut.textContent = "משחזר קבצים…";
+            const r = await callFn("backupRestoreStorage", { date: b.date });
+            mediaOut.textContent = "✓ שוחזרו " + r.restored + " קבצים (" + r.overwritten + " הוחלפו).";
+          } catch (e) { mediaOut.textContent = "שגיאה: " + (e && e.message || e); }
+          finally { mediaBtn.disabled = false; }
+        };
+        box.appendChild(mediaRow);
+      }
       b.files.forEach(f => {
         const row = el("div"); row.style.cssText = "margin:10px 0;padding-top:8px;border-top:1px solid var(--line)";
         const rb = el("button", "btn sm ghost", "שחזור…"), out = el("div", "msg"), acts = el("div");
@@ -2072,10 +2108,16 @@ function adminPanel() {
     c.append(el("div", "msg", "החשבון " + user.email + " אינו רשום כמנהל."));
     const o = el("button", "btn sm ghost", "יציאה"); o.onclick = () => signOut(auth); c.appendChild(o);
   } else {
-    const tb = el("div", "chips");
-    [["list", "גיליונות"], ["issue", editing ? "עריכת גיליון" : "העלאת גיליון"], ["visual", "✏️ עורך חזותי"], ["stats", "\u{1F4CA} \u05e1\u05d8\u05d8\u05d9\u05e1\u05d8\u05d9\u05e7\u05d5\u05ea"], ["track", "מעקב גאונים"], ["sagemgr", "גאונים"], ["subs", "נרשמים"], ["halacha", "הלכה יומית"], ["zmanim", "זמני היום"], ["ded", "הקדשות"], ["layout", "פריסה (רשימה)"], ["books", "קטלוג ספרים"], ["about", "אודות"], ["import", "ייבוא מאקסל"], ["site", "⚙️ הגדרות אתר"], ["backup", "גיבויים"], ["admins", "מנהלים"]].forEach(([k, l]) => { const b = el("button", "chip" + (adminTab === k ? " on" : ""), l); b.onclick = () => { if (editMode && k !== "visual" && edDirty && !confirm("יש שינויים שלא נשמרו בעורך החזותי. לעזוב ולבטל אותם?")) return; adminTab = k; editing = k === "issue" ? editing : null; editSage = null; sageNew = false; if (k === "visual") enterEdit(); adminPanel(); }; tb.appendChild(b); });
-    c.appendChild(tb);
-    if (adminTab === "visual") visualBar(c); else if (adminTab === "list") issuesList(c); else if (adminTab === "issue") issueForm(c); else if (adminTab === "stats") statsView(c); else if (adminTab === "track") trackView(c); else if (adminTab === "subs") subsView(c); else if (adminTab === "sagemgr") sagesManager(c); else if (adminTab === "halacha") halachaAdmin(c); else if (adminTab === "zmanim") zmanimAdmin(c); else if (adminTab === "ded") dedAdmin(c); else if (adminTab === "layout") layoutAdmin(c); else if (adminTab === "books") booksView(c); else if (adminTab === "about") aboutEditor(c); else if (adminTab === "import") importView(c); else if (adminTab === "site") siteAdmin(c); else if (adminTab === "backup") backupView(c); else adminsBox(c);
+    // ניווט דו-שלבי: שורת קבוצות, ומתחתיה לשוניות הקבוצה הנוכחית. לחיצה על קבוצה חוזרת ללשונית האחרונה שנפתחה בה.
+    const TAB_LABEL = { list: "גיליונות", issue: editing ? "עריכת גיליון" : "העלאת גיליון", visual: "✏️ עורך חזותי", stats: "\u{1F4CA} סטטיסטיקות", subs: "נרשמים", mailtrack: "מעקב דיוור", track: "מעקב גאונים", sagemgr: "גאונים", import: "ייבוא מאקסל", halacha: "הלכה יומית", zmanim: "זמני היום", ded: "הקדשות", books: "קטלוג ספרים", about: "אודות", layout: "פריסה (רשימה)", backup: "גיבויים", admins: "מנהלים" };
+    const grp = adminGroupOf(adminTab); ADMIN_LAST[grp.id] = adminTab;
+    const goTab = k => { if (editMode && k !== "visual" && edDirty && !confirm("יש שינויים שלא נשמרו בעורך החזותי. לעזוב ולבטל אותם?")) return; adminTab = k; editing = k === "issue" ? editing : null; editSage = null; sageNew = false; if (k === "visual") enterEdit(); adminPanel(); };
+    const tb = el("nav", "adminnav"); tb.setAttribute("aria-label", "ניהול");
+    const gr = el("div", "chips grp"), sr = el("div", "chips sub");
+    ADMIN_GROUPS.forEach(g => { const b = el("button", "chip" + (g === grp ? " on" : ""), g.label); if (g === grp) b.setAttribute("aria-current", "true"); b.onclick = () => { if (g !== grp) goTab(ADMIN_LAST[g.id] || g.tabs[0]); }; gr.appendChild(b); });
+    grp.tabs.forEach(k => { const b = el("button", "chip" + (adminTab === k ? " on" : ""), TAB_LABEL[k]); if (adminTab === k) b.setAttribute("aria-current", "page"); b.onclick = () => { if (adminTab !== k) goTab(k); }; sr.appendChild(b); });
+    tb.append(gr, sr); c.appendChild(tb);
+    if (adminTab === "visual") visualBar(c); else if (adminTab === "list") issuesList(c); else if (adminTab === "issue") issueForm(c); else if (adminTab === "stats") statsView(c); else if (adminTab === "track") trackView(c); else if (adminTab === "subs") subsView(c); else if (adminTab === "mailtrack") mailTrackView(c); else if (adminTab === "sagemgr") sagesManager(c); else if (adminTab === "halacha") halachaAdmin(c); else if (adminTab === "zmanim") zmanimAdmin(c); else if (adminTab === "ded") dedAdmin(c); else if (adminTab === "layout") layoutAdmin(c); else if (adminTab === "books") booksView(c); else if (adminTab === "about") aboutEditor(c); else if (adminTab === "import") importView(c); else if (adminTab === "backup") backupView(c); else adminsBox(c);
     const o = el("button", "btn sm ghost", "יציאה"); o.style.marginTop = "16px"; o.onclick = () => signOut(auth); c.appendChild(o);
   }
   box.appendChild(c);
@@ -2095,7 +2137,7 @@ window.addEventListener("appinstalled", () => { window.__bip = null; applyInstal
 function applyLang() {
   document.documentElement.lang = lang; document.documentElement.dir = lang === "he" ? "rtl" : "ltr";
   document.title = t("title");
-  $("h1").textContent = t("title"); $("sub").textContent = t("sub"); $("q").placeholder = t("search");
+  $("h1").textContent = t("title"); $("sub").textContent = t("sub"); $("q").placeholder = t("search"); $("q").setAttribute("aria-label", t("search"));
   if (ADMIN_PAGE) { document.title = "ניהול · " + t("title"); $("h1").textContent = "ניהול · " + t("title"); $("sub").textContent = "ממשק ניהול"; } else $("adminToggle").textContent = t("manage");
   if (!issues.length && !$("status").dataset.done) $("status").textContent = t("loading");
   const Lb = $("langs"); Lb.innerHTML = "";
@@ -2103,7 +2145,6 @@ function applyLang() {
   LANGS.forEach(l => { const o = el("option", null, T[l].name); o.value = l; if (l === lang) o.selected = true; ls.appendChild(o); });
   ls.onchange = () => { lang = ls.value; try { localStorage.setItem("lang", lang); } catch {} applyLang(); };
   Lb.appendChild(ls);
-  renderBanner();
   const C = $("contact"); C.innerHTML = "";
   const items = [];
   if (CONTACT.email) { const a = el("a", null, "✉ " + CONTACT.email); a.href = "mailto:" + CONTACT.email; items.push(a); }

@@ -18,6 +18,10 @@ service cloud.firestore {
           && request.resource.data.views is int
           && request.resource.data.views == resource.data.get('views', 0) + 1);
     }
+    // מעקב דיוור (1.38.0): רשומת נמען לכל גיליון (נשלח/נכשל/פתיחות/הקלקות), סיכום לגיליון והסרות מהרשימה. מנהלים קוראים בלבד; הכתיבה נעשית מהשרת.
+    match /issues/{id}/mailed/{email} { allow read: if isAdmin(); allow write: if false; }
+    match /mailStats/{id} { allow read: if isAdmin(); allow write: if false; }
+    match /unsubs/{email} { allow read: if isAdmin(); allow write: if false; }
     // רשימת הגאונים (נטענת מהאקסל דרך האתר)
     match /sagesData/{id} { allow read: if true; allow write: if isAdmin(); }
     // משימות שליחת מייל ברקע: מנהלים רק קוראים (הכתיבה נעשית מהשרת)

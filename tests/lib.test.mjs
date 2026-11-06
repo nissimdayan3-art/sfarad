@@ -194,23 +194,3 @@ test("זמני היום: בלי עמודת תאריך ← null; שמות ערי�
   assert.equal(L.zmCityName("תל_אביב.xlsx"), "תל אביב");
   assert.equal(L.zmCityId("בני ברק/1"), "בני_ברק1");
 });
-
-test("הגדרות אתר: safeUrl, cleanSiteCfg ו-bannerFor", () => {
-  assert.equal(L.safeUrl("https://a.co/x"), "https://a.co/x");
-  assert.equal(L.safeUrl("/archive"), "/archive");
-  assert.equal(L.safeUrl("//evil.com"), "");
-  assert.equal(L.safeUrl("javascript:alert(1)"), "");
-  assert.equal(L.safeUrl("https://a b"), "");
-  const c = L.cleanSiteCfg({ contact: { email: " a@b.co ", phone: " 03-1234567 ", whatsapp: "+972 50-123-4567", address: "x".repeat(500) }, banner: { on: 1, text: { he: " שלום ", en: "" }, url: "javascript:x", until: "2026-13" } });
-  assert.deepEqual([c.contact.email, c.contact.phone, c.contact.whatsapp, c.contact.address.length], ["a@b.co", "03-1234567", "972501234567", 200]);
-  assert.deepEqual([c.banner.on, c.banner.text.he, c.banner.url, c.banner.until], [true, "שלום", "", ""]);
-  assert.equal(L.cleanSiteCfg({ contact: { email: "לא-מייל" } }).contact.email, "");
-  assert.deepEqual(L.cleanSiteCfg(null).banner.on, false);
-  const cfg = L.cleanSiteCfg({ banner: { on: true, text: { he: "עברית", en: "English" }, url: "/archive", until: "2026-11-10" } });
-  assert.deepEqual(L.bannerFor(cfg, "en", "2026-11-09"), { text: "English", url: "/archive" });
-  assert.equal(L.bannerFor(cfg, "fr", "2026-11-09").text, "עברית", "נפילה לעברית");
-  assert.equal(L.bannerFor(cfg, "he", "2026-11-10").text, "עברית", "ביום האחרון עדיין מוצגת");
-  assert.equal(L.bannerFor(cfg, "he", "2026-11-11"), null, "פג תוקף");
-  assert.equal(L.bannerFor(L.cleanSiteCfg({ banner: { on: false, text: { he: "x" } } }), "he", "2026-01-01"), null);
-  assert.equal(L.bannerFor(null, "he", "2026-01-01"), null);
-});

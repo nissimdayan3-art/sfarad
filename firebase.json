@@ -25,11 +25,38 @@
         ]
       },
       {
-        "source": "**/*.@(png|webmanifest)",
+        "source": "**/*.webmanifest",
         "headers": [
           {
             "key": "Cache-Control",
             "value": "no-cache"
+          }
+        ]
+      },
+      {
+        "source": "**/pattern-logo*.png",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "public, max-age=31536000, immutable"
+          }
+        ]
+      },
+      {
+        "source": "**/@(icon-192|icon-512|icon-maskable-512|favicon-64|apple-touch-icon|logo-band).png",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "public, max-age=86400, stale-while-revalidate=604800"
+          }
+        ]
+      },
+      {
+        "source": "/logo.jpg",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "public, max-age=86400, stale-while-revalidate=604800"
           }
         ]
       },
@@ -50,6 +77,10 @@
             "value": "nosniff"
           },
           {
+            "key": "X-Frame-Options",
+            "value": "SAMEORIGIN"
+          },
+          {
             "key": "Referrer-Policy",
             "value": "strict-origin-when-cross-origin"
           },
@@ -61,6 +92,10 @@
       }
     ],
     "rewrites": [
+      {
+        "source": "/accessibility",
+        "destination": "/accessibility.html"
+      },
       {
         "source": "/sitemap.xml",
         "function": {
@@ -100,6 +135,13 @@
         "source": "/c/**",
         "function": {
           "functionId": "confirmSub",
+          "region": "europe-west1"
+        }
+      },
+      {
+        "source": "/t/**",
+        "function": {
+          "functionId": "track",
           "region": "europe-west1"
         }
       }

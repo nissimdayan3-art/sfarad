@@ -49,7 +49,7 @@ ${hasCover ? '<meta property="og:image:width" content="1200">\n<meta property="o
 <meta name="twitter:title" content="${esc(title)}">
 <meta name="twitter:image" content="${esc(img)}">
 <script type="application/ld+json">${ldJson}</script>
-<style>body{margin:0;background:#faf6ee;color:#2a2118;font-family:"Frank Ruhl Libre","David",serif;line-height:1.7}main{max-width:640px;margin:0 auto;padding:28px 18px 48px;text-align:center}img{max-width:100%;height:auto;border-radius:10px}h1{color:#8a5a1f;font-size:1.6rem;margin:14px 0 4px}.d{color:#7a6c5a;margin:0 0 12px}.b{display:inline-block;margin:18px 0 8px;padding:12px 26px;background:#8a5a1f;color:#fff;border-radius:10px;text-decoration:none;font-weight:700}a.h{color:#8a5a1f;display:block;margin-top:10px}.pn{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin:22px 0 0}.pn a{flex:1 1 200px;max-width:300px;padding:10px 14px;border:1px solid #d9c9a8;border-radius:10px;color:#8a5a1f;text-decoration:none;font-weight:700}.pn small{display:block;font-weight:400;color:#7a6c5a;font-size:.8rem}h2{font-size:1.05rem;color:#7a6c5a;margin:26px 0 0}@media(prefers-color-scheme:dark){body{background:#17130e;color:#f1e8d8}h1,a.h{color:#d9a35a}.b{background:#d9a35a;color:#1a1209}.pn a{border-color:#3a2f20;color:#d9a35a}.pn small,h2{color:#a8987f}}@media print{.b,.pn,.h,h2{display:none}body{background:#fff;color:#000}}</style>
+<style>body{margin:0;background:#faf6ee;color:#2a2118;font-family:"Frank Ruhl Libre","David",serif;line-height:1.7}main{max-width:640px;margin:0 auto;padding:28px 18px 48px;text-align:center}img{max-width:100%;height:auto;border-radius:10px}h1{color:#8a5a1f;font-size:1.6rem;margin:14px 0 4px}.d{color:#7a6c5a;margin:0 0 12px}.b{display:inline-block;margin:18px 0 8px;padding:12px 26px;background:#8a5a1f;color:#fff;border-radius:10px;text-decoration:none;font-weight:700}a.h{color:#8a5a1f;display:block;margin-top:10px}.pn{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin:22px 0 0}.pn a{flex:1 1 200px;max-width:300px;padding:10px 14px;border:1px solid #d9c9a8;border-radius:10px;color:#8a5a1f;text-decoration:none;font-weight:700}.pn small{display:block;font-weight:400;color:#7a6c5a;font-size:.8rem}h2{font-size:1.05rem;color:#7a6c5a;margin:26px 0 0}@media(prefers-color-scheme:dark){body{background:#17130e;color:#f1e8d8}h1,a.h{color:#d9a35a}.b{background:#d9a35a;color:#1a1209}.pn a{border-color:#3a2f20;color:#d9a35a}.pn small,h2{color:#a8987f}}</style>
 </head><body><main>
 ${hasCover ? `<img src="${esc(img)}" alt="${esc(title)}" width="1200" height="630">` : ""}
 <h1>${esc(title)}</h1>
@@ -79,35 +79,17 @@ export function sitemapXml(site, issues, today = new Date().toISOString().slice(
 export function archiveHtml(issues, site) {
   const rows = [...issues].sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
   const li = x => `<li><a href="/i/${esc(x.id)}">${esc(issueTitle(x))}</a>${isoDay(x.date) ? ` <span>${isoDay(x.date)}</span>` : ""}</li>`;
-  // קיבוץ לפי שנה (מהחדשה לישנה); גיליונות בלי תאריך בסוף
-  const by = new Map();
-  for (const x of rows) { const y = (isoDay(x.date) || "").slice(0, 4) || "ללא תאריך"; if (!by.has(y)) by.set(y, []); by.get(y).push(x); }
-  const years = [...by.keys()];
-  const nav = years.length > 1 ? `<nav class="yrs" aria-label="שנים">${years.map(y => `<a href="#y${esc(y.replace(/\s/g, "-"))}">${esc(y)}</a>`).join(" ")}</nav>` : "";
-  const body = years.map(y => `<h2 id="y${esc(y.replace(/\s/g, "-"))}">${esc(y)} <small>(${by.get(y).length})</small></h2>\n<ul>${by.get(y).map(li).join("\n")}</ul>`).join("\n");
-  const url = site + "/archive", title = "ארכיון הגיליונות · חכמי ספרד";
   const desc = "ארכיון כל הגיליונות השבועיים של מכון חכמי ספרד – גיליון לזכות הרבים, לפי שבתות ושנים";
-  const ld = JSON.stringify({ "@context": "https://schema.org", "@type": "CollectionPage", name: title, url, inLanguage: "he", description: desc, numberOfItems: rows.length, isPartOf: { "@type": "WebSite", name: "גיליון חכמי ספרד", url: site + "/" } }).replace(/</g, "\\u003c");
   return `<!doctype html>
 <html lang="he" dir="rtl"><head><meta charset="utf-8">
-<title>${esc(title)}</title>
+<title>ארכיון הגיליונות · חכמי ספרד</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="description" content="${esc(desc)}">
-<link rel="canonical" href="${esc(url)}">
-<link rel="alternate" type="application/rss+xml" title="גיליון חכמי ספרד" href="/rss.xml">
-<meta property="og:type" content="website">
-<meta property="og:site_name" content="מכון חכמי ספרד">
-<meta property="og:locale" content="he_IL">
-<meta property="og:title" content="${esc(title)}">
-<meta property="og:description" content="${esc(desc)}">
-<meta property="og:url" content="${esc(url)}">
-<meta property="og:image" content="${esc(site + "/logo.jpg")}">
-<script type="application/ld+json">${ld}</script>
-<style>body{margin:0;font-family:"Frank Ruhl Libre","David",serif;background:#faf6ee;color:#2a2118;line-height:1.7}main{max-width:720px;margin:0 auto;padding:24px 16px}h1{color:#8a5a1f}h2{color:#8a5a1f;margin:1.4em 0 .2em;border-bottom:1px solid #d9c9a8}h2 small{font-weight:400;color:#7a6c5a;font-size:.7em}ul{margin:.3em 0;padding-inline-start:1.2em}li{margin:.3em 0}li span{color:#7a6c5a;font-size:.85em}a{color:#8a5a1f}.yrs{display:flex;flex-wrap:wrap;gap:6px 14px;margin:12px 0}@media(prefers-color-scheme:dark){body{background:#17130e;color:#f1e8d8}a,h1,h2{color:#d9a35a}h2{border-color:#3a2f20}li span,h2 small{color:#a8987f}}@media print{.yrs,.nv{display:none}body{background:#fff;color:#000}a{color:#000;text-decoration:none}}</style></head>
-<body><main><h1>ארכיון הגיליונות</h1><p>${esc(desc)}.</p>
-${nav}
-${body}
-<p class="nv"><a href="/">← לאתר הראשי</a> · <a href="/rss.xml">RSS</a></p></main></body></html>
+<link rel="canonical" href="${esc(site + "/archive")}">
+<style>body{margin:0;font-family:"Frank Ruhl Libre","David",serif;background:#faf6ee;color:#2a2118;line-height:1.7}main{max-width:720px;margin:0 auto;padding:24px 16px}h1{color:#8a5a1f}li{margin:.3em 0}li span{color:#7a6c5a;font-size:.85em}a{color:#8a5a1f}@media(prefers-color-scheme:dark){body{background:#17130e;color:#f1e8d8}a{color:#d9a35a}}</style></head>
+<body><main id="main"><h1>ארכיון הגיליונות</h1><p>${esc(desc)}.</p>
+<ul>${rows.map(li).join("\n")}</ul>
+<p><a href="/">← לאתר הראשי</a> · <a href="/rss.xml">RSS</a> · <a href="/accessibility">הצהרת נגישות</a></p></main></body></html>
 `;
 }
 
@@ -127,7 +109,8 @@ export function rssXml(site, issues) {
 }
 
 // גיבוי: שם תיקייה לפי תאריך (backups/YYYY-MM-DD/) ורשימת תיקיות ישנות למחיקה (משאירים את keep האחרונות)
-export const backupFolder = (d = new Date()) => "backups/" + d.toISOString().slice(0, 10) + "/";
+// תאריך הגיבוי לפי שעון ישראל (ולא UTC), כדי שגיבוי ידני אחרי חצות לא ידרוס את הגיבוי של היום הקודם
+export const backupFolder = (d = new Date()) => "backups/" + new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Jerusalem", year: "numeric", month: "2-digit", day: "2-digit" }).format(d) + "/";
 export function oldBackupFolders(names, keep = 8) {
   const set = [...new Set(names.map(n => (String(n).match(/^backups\/(\d{4}-\d{2}-\d{2})\//) || [])[1]).filter(Boolean))].sort();
   return set.slice(0, Math.max(0, set.length - keep)).map(x => "backups/" + x + "/");
@@ -173,10 +156,10 @@ export const confirmToken = (email, key) => unsubToken(email, key, "confirm|");
 export const verifyConfirm = (token, key) => verifyUnsub(token, key, "confirm|");
 
 const EM = {
-  he: { hello: "שלום {name},", morePages: "עמודים נוספים באתר", read: "לקריאת הגיליון", unsub: "להסרה מרשימת התפוצה", why: "קיבלת מייל זה כי נרשמת לגיליון חכמי ספרד." },
-  en: { hello: "Hello {name},", morePages: "more pages on the website", read: "Read the issue", unsub: "Unsubscribe", why: "You are receiving this because you subscribed to the Sages of Sepharad bulletin." },
-  fr: { hello: "Bonjour {name},", morePages: "pages de plus sur le site", read: "Lire le bulletin", unsub: "Se désabonner", why: "Vous recevez ce message car vous êtes abonné au bulletin Sages de Sépharad." },
-  es: { hello: "Hola {name},", morePages: "páginas más en el sitio", read: "Leer el boletín", unsub: "Cancelar suscripción", why: "Recibes este mensaje porque te suscribiste al boletín de Sefarad." }
+  he: { hello: "שלום {name},", morePages: "עמודים נוספים באתר", read: "לקריאת הגיליון", unsub: "להסרה מרשימת התפוצה", why: "קיבלת מייל זה כי נרשמת לגיליון חכמי ספרד.", track: "מייל זה כולל מדידת פתיחה והקלקה לצורך שיפור השירות." },
+  en: { hello: "Hello {name},", morePages: "more pages on the website", read: "Read the issue", unsub: "Unsubscribe", why: "You are receiving this because you subscribed to the Sages of Sepharad bulletin.", track: "This email includes open and click measurement to help us improve the service." },
+  fr: { hello: "Bonjour {name},", morePages: "pages de plus sur le site", read: "Lire le bulletin", unsub: "Se désabonner", why: "Vous recevez ce message car vous êtes abonné au bulletin Sages de Sépharad.", track: "Ce message inclut une mesure des ouvertures et des clics afin d’améliorer le service." },
+  es: { hello: "Hola {name},", morePages: "páginas más en el sitio", read: "Leer el boletín", unsub: "Cancelar suscripción", why: "Recibes este mensaje porque te suscribiste al boletín de Sefarad.", track: "Este mensaje incluye medición de aperturas y clics para mejorar el servicio." }
 };
 export const emailSubject = (lang, i) => pushMessage(lang, i).title;
 
@@ -221,9 +204,9 @@ export const plainOf = txt => String(txt || "").replace(/\r/g, "").split("\n").m
 export const MAIL_MAX_PAGES = 12, MAIL_MAX_TEXT = 20000;
 
 // srcs (אופציונלי): מקורות תמונה לפי אינדקס עמוד, למשל "cid:..." להטמעה בתוך המייל; בלעדיו משתמשים בקישור לתמונה באתר
-export function emailHtml(lang, i, id, site, unsubUrl, srcs, name) {
+export function emailHtml(lang, i, id, site, unsubUrl, srcs, name, trk) {
   const m = pushMessage(lang, i), L = EM[lang] || EM.he, dir = (EM[lang] ? lang : "he") === "he" ? "rtl" : "ltr", al = dir === "rtl" ? "right" : "left";
-  const url = site + "/i/" + id, all = (i.pages || []).filter(p => p && p.url), shown = all.slice(0, MAIL_MAX_PAGES), more = all.length - shown.length;
+  const url = trk && trk.click ? trk.click : site + "/i/" + id, all = (i.pages || []).filter(p => p && p.url), shown = all.slice(0, MAIL_MAX_PAGES), more = all.length - shown.length;
   const imgs = shown.length ? shown : [{ url: imageOf(i, site) }];
   const body = String(i.desc || "").trim() ? richHtml(String(i.desc).slice(0, MAIL_MAX_TEXT)) : "";
   const imgRows = imgs.map((p, k) => `<tr><td style="padding:0 24px 12px"><a href="${esc(url)}"><img src="${esc((srcs && srcs[k]) || p.url)}" alt="${esc(m.title + (imgs.length > 1 ? " · " + (k + 1) : ""))}" width="512" style="display:block;width:100%;max-width:512px;height:auto;border:0;border-radius:6px"></a></td></tr>`).join("\n");
@@ -240,8 +223,8 @@ ${body}
 ${imgRows}
 ${more > 0 ? `<tr><td style="padding:0 24px 12px;font-size:14px;color:#7a6c5a;text-align:${al}">+${more} ${esc(L.morePages)}</td></tr>` : ""}
 <tr><td style="padding:6px 24px 20px;text-align:${al}"><a href="${esc(url)}" style="display:inline-block;background:#8a5a1f;color:#ffffff;text-decoration:none;padding:12px 26px;border-radius:8px;font-size:16px;font-weight:bold">${esc(L.read)}</a></td></tr>
-<tr><td style="padding:14px 24px;background:#f5efe2;font-size:12px;line-height:1.6;color:#7a6c5a;text-align:${al}">${esc(L.why)}<br><a href="${esc(unsubUrl)}" style="color:#7a6c5a">${esc(L.unsub)}</a></td></tr>
-</table></td></tr></table></body></html>`;
+<tr><td style="padding:14px 24px;background:#f5efe2;font-size:12px;line-height:1.6;color:#7a6c5a;text-align:${al}">${esc(L.why)}<br><a href="${esc(unsubUrl)}" style="color:#7a6c5a">${esc(L.unsub)}</a>${trk ? `<br>${esc(L.track || EM.he.track)}` : ""}</td></tr>
+</table></td></tr></table>${trk && trk.open ? `<img src="${esc(trk.open)}" width="1" height="1" alt="" style="display:block;width:1px;height:1px;border:0;opacity:0">` : ""}</body></html>`;
 }
 
 // דף הסרה (אישור בלחיצה — כדי שסורקי מייל לא יסירו בטעות)
@@ -285,11 +268,12 @@ export function confirmPage(kind, email) {
 }
 
 // גרסת טקסט רגיל של המיילים (מסנני ספאם מעדיפים הודעה שיש לה גם חלק טקסט)
-export function emailText(lang, i, id, site, unsubUrl, name) {
+export function emailText(lang, i, id, site, unsubUrl, name, trk) {
   const m = pushMessage(lang, i), L = EM[lang] || EM.he, body = plainOf(String(i.desc || "").slice(0, MAIL_MAX_TEXT));
   const lines = name ? [(L.hello || EM.he.hello).replace("{name}", cleanDetail(name, 60)), "", m.title, "", m.body] : [m.title, "", m.body];
   if (body) lines.push("", body);
-  lines.push("", L.read + ": " + site + "/i/" + id, "", "--", L.why, L.unsub + ": " + unsubUrl);
+  lines.push("", L.read + ": " + (trk && trk.click ? trk.click : site + "/i/" + id), "", "--", L.why, L.unsub + ": " + unsubUrl);
+  if (trk) lines.push(L.track || EM.he.track);
   return lines.join("\n");
 }
 export function confirmText(lang, url) {
@@ -303,3 +287,64 @@ export const SUB_LIMITS = { name: 60, phone: 30, city: 60, note: 300 };
 
 // המתנה לפני ניסיון נוסף כשהשרת מגביל קצב שליחה (בדקות: 5, 10, 20, 40, ועד תקרה של 60)
 export const mailBackoffMs = slow => Math.min(60, 5 * 2 ** Math.max(0, (slow || 1) - 1)) * 60000;
+
+
+// שגיאת מייל קבועה לנמען (תיבה לא קיימת / כתובת פסולה): אין טעם לנסות שוב בכל ריצה של העובד.
+// שגיאות אימות מול השרת (530/534/535) ושגיאות זמניות אינן קבועות.
+export const isPermanentMailError = e => !!e && (e.code === "EENVELOPE" || [501, 550, 551, 553].includes(+e.responseCode));
+
+// גיבוי מדיה: כל האובייקטים בבאקט למעט backups/, בלי לטעון לזיכרון את הגיבויים הקודמים.
+// קודם מגלים תיקיות ברמה העליונה (delimiter), ואז מפרטים כל תיקייה בנפרד.
+export async function listMediaSources(bucket) {
+  const out = [], prefixes = new Set();
+  let q = { delimiter: "/", autoPaginate: false };
+  while (q) {
+    const [files, next, resp] = await bucket.getFiles(q);
+    out.push(...files);
+    ((resp && resp.prefixes) || []).forEach(p => prefixes.add(p));
+    q = next || null;
+  }
+  for (const p of prefixes) if (p !== "backups/") { const [files] = await bucket.getFiles({ prefix: p }); out.push(...files); }
+  return out.filter(f => f && f.name && !f.name.startsWith("backups/") && !f.name.endsWith("/"));
+}
+// קובצי גיבוי (בתוך storage/) שכבר אינם קיימים במקור: נמחקים רק אחרי שההעתקה הצליחה
+export const staleBackupMedia = (backupNames, sourceNames, prefix) => {
+  const keep = new Set(sourceNames);
+  return backupNames.filter(n => n.startsWith(prefix) && !keep.has(n.slice(prefix.length)));
+};
+
+// ===== מעקב דיוור (1.38.0) =====
+// אסימון מעקב לנמען ולגיליון: base64url(id|email).חתימה. אין בו כתובת יעד, ולכן אי אפשר לנצל אותו להפניה חיצונית (open redirect):
+// הקלקה תמיד מופנית לדף הגיליון באתר.
+export function trackToken(id, email, key) {
+  const v = String(id) + "|" + String(email).trim().toLowerCase();
+  return Buffer.from(v, "utf8").toString("base64url") + "." + sig("track|", v, key);
+}
+export function verifyTrack(token, key) {
+  try {
+    const [b, h] = String(token || "").split(".");
+    if (!b || !h) return null;
+    const v = Buffer.from(b, "base64url").toString("utf8"), want = sig("track|", v, key);
+    if (h.length !== want.length || !timingSafeEqual(Buffer.from(h), Buffer.from(want))) return null;
+    const k = v.indexOf("|"); if (k < 1) return null;
+    return { id: v.slice(0, k), email: v.slice(k + 1) };
+  } catch { return null; }
+}
+export const TRACK_GIF = Buffer.from("R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7", "base64");
+
+// חישוב עדכון לרשומת נמען (issues/<id>/mailed/<email>) בעקבות פתיחה ("o") או הקלקה ("c").
+// מחזיר null כשאין מה לעדכן (נמען שנכשל, או אירוע כפול בתוך 3 שניות), אחרת { update, d } כאשר d = תוספות לסיכום הגיליון.
+// הקלקה על קישור נחשבת גם כפתיחה (קליינטים שחוסמים תמונות לא יוצרים פתיחה).
+export function applyTrackEvent(cur, kind, now) {
+  if (!cur || cur.failed) return null;
+  const isClick = kind === "c", last = (isClick ? cur.lastClick : cur.lastOpen) || 0;
+  if (now - last < 3000) return null;
+  const update = {}, d = { opens: 0, clicks: 0, opened: 0, clicked: 0 };
+  const open = () => { update.opens = (cur.opens || 0) + 1; update.lastOpen = now; d.opens = 1; if (!cur.firstOpen) { update.firstOpen = now; d.opened = 1; } };
+  if (isClick) {
+    update.clicks = (cur.clicks || 0) + 1; update.lastClick = now; d.clicks = 1;
+    if (!cur.firstClick) { update.firstClick = now; d.clicked = 1; }
+    if (!cur.firstOpen) open();
+  } else open();
+  return { update, d };
+}
